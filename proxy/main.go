@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -44,8 +46,16 @@ type GithubWebhook struct {
 // the specified directory and then proxy the request to the reverse proxy.
 func gitCloneProxy(dir string, serverURL string, rproxy http.Handler) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			log.Printf("failed to get request body: %s", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewBuffer(b))
+
 		gh := &GithubWebhook{}
-		if err := json.NewDecoder(r.Body).Decode(gh); err != nil {
+		if err = json.Unmarshal(b, gh); err != nil {
 			log.Printf("failed to decode JSON payload: %s", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -54,14 +64,14 @@ func gitCloneProxy(dir string, serverURL string, rproxy http.Handler) func(http.
 		rmCmd := exec.Command("rm", "-rf", dir)
 		rmCmd.Stdout = os.Stderr
 		rmCmd.Stderr = os.Stderr
-		if err := rmCmd.Run(); err != nil {
+		if err = rmCmd.Run(); err != nil {
 			log.Printf("failed to clean local git repo: %s. Moving on to cloning", err.Error())
 		}
 
 		cmd := exec.Command("git", "clone", "https://github.com/"+gh.Repository.FullName, dir)
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
+		if err = cmd.Run(); err != nil {
 			log.Printf("failed to clone git repo: %s", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

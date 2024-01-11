@@ -27,9 +27,10 @@ func (m *Webhook) Proxy(ctx context.Context, proxyPort int, server *Directory, r
 func (m *Webhook) webhookService(ctx context.Context, serverPort int, repoName string, repoDir *CacheVolume) *Service {
 	return dag.
 		Container().
-		From("ghcr.io/matipan/webhook").
+		From("ghcr.io/matipan/webhook:dagger-1").
 		WithMountedCache("/"+repoName, repoDir).
 		WithExposedPort(serverPort).
-		WithExec([]string{"-hooks", "/" + repoName + "/hooks.json", "-verbose", "-port", fmt.Sprintf("%d", serverPort)}).
+		WithExec([]string{"/webhook", "-hooks", "/" + repoName + "/hooks.json", "-verbose", "-port", fmt.Sprintf("%d", serverPort)},
+			ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 		AsService()
 }
