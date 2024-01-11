@@ -51,13 +51,11 @@ func gitCloneProxy(dir string, serverURL string, rproxy http.Handler) func(http.
 			return
 		}
 
-		mvCmd := exec.Command("mv", dir, "/bak"+dir)
-		mvCmd.Stdout = os.Stderr
-		mvCmd.Stderr = os.Stderr
-		if err := mvCmd.Run(); err != nil {
-			log.Printf("failed to clean local git repo: %s", err.Error())
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		rmCmd := exec.Command("rm", "-rf", dir)
+		rmCmd.Stdout = os.Stderr
+		rmCmd.Stderr = os.Stderr
+		if err := rmCmd.Run(); err != nil {
+			log.Printf("failed to clean local git repo: %s. Moving on to cloning", err.Error())
 		}
 
 		cmd := exec.Command("git", "clone", "https://github.com/"+gh.Repository.FullName, dir)
