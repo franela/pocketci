@@ -25,6 +25,8 @@ func main() {
 		log.Fatalf("failed to connect to dagger: %v", err)
 	}
 
+	// we're warming up the webhook container here so we don't make the
+	// user wait for the first request to be served
 	if _, err = webhookContainer(client).Sync(ctx); err != nil {
 		log.Fatalf("failed to build webhook: %v", err)
 	}
@@ -74,12 +76,14 @@ func gitCloneProxy() func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
+		defer client.Close()
+
 		repo := client.Git("https://github.com/" + gh.Repository.FullName).Commit(gh.After).Tree()
 		wsvc := webhookContainer(client).
 			WithDirectory("/repo", repo).
 			WithWorkdir("/repo").
 			WithExposedPort(9000).
-			WithExec([]string{"-port", "9000", "-hooks", "hooks.json"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+			WithExec([]string{"-verbose", "-port", "9000", "-hooks", "hooks.json"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 			AsService()
 
 		log.Println("starting tunnel")
@@ -89,7 +93,7 @@ func gitCloneProxy() func(http.ResponseWriter, *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer svc.Stop(ctx)
+		defer wsvc.Stop(ctx)
 
 		log.Println("getting endpoint")
 		endpoint, err := svc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http"})
@@ -106,22 +110,8 @@ func gitCloneProxy() func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		for {
-			log.Println("sending request")
-			res, err := http.Get(endpoint)
-			if err != nil {
-				log.Println("failed", err)
-				return
-			}
-			res.Body.Close()
-			log.Println(res.StatusCode)
-			if res.StatusCode == 200 {
-				log.Println("service is up")
-				break
-			}
-		}
-
 		log.Printf("proxying request to %s", endpoint)
+
 		httputil.NewSingleHostReverseProxy(u).ServeHTTP(w, r)
 	}
 }
