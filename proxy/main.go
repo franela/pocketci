@@ -12,10 +12,14 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"dagger.io/dagger"
 )
+
+var hooksPath = flag.String("hooks", "", "path to an optional hooks.json file. If not provided it will start in gitCloneProxy mode")
 
 func main() {
 	flag.Parse()
@@ -25,6 +29,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to connect to dagger: %v", err)
 	}
+	defer client.Close()
 
 	// we're warming up the webhook container here so we don't make the
 	// user wait for the first request to be served
@@ -32,15 +37,90 @@ func main() {
 		log.Fatalf("failed to build webhook: %v", err)
 	}
 
-	http.HandleFunc("/", gitCloneProxy())
+	mux := http.NewServeMux()
 
-	fmt.Println("starting proxy server in port 8080")
-	err = http.ListenAndServe(fmt.Sprintf(":%d", 8080), nil)
-	if err != nil {
-		log.Printf("failed to start server: %v", err)
+	stop := func() {}
+	if *hooksPath != "" {
+		log.Println("starting reverse proxy mode")
+
+		hooksFile := client.Host().File(*hooksPath)
+		hooks, err := hooksFile.Contents(ctx)
+		if err != nil {
+			log.Fatalf("failed to read hooks file: %v", err)
+		}
+		fmt.Println(hooks)
+		if hooks == "" {
+			log.Fatalf("hooks file is empty")
+		}
+
+		// override stop function to stop the reverse proxy
+		var handler http.HandlerFunc
+		stop, handler = reverseProxy(ctx, client, hooksFile)
+
+		mux.HandleFunc("/", handler)
+	} else {
+		log.Println("starting git proxy mode")
+
+		mux.HandleFunc("/", gitCloneProxy())
 	}
 
-	defer client.Close()
+	fmt.Println("starting proxy server in port 8080")
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+
+	_, cancel := context.WithCancel(ctx)
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-ch
+		log.Println("stopping reverse proxy if there is any")
+		stop()
+		log.Println("received sigint, cancelling context")
+		cancel()
+	}()
+
+	err = srv.ListenAndServe()
+	if err != nil {
+		log.Printf("serve exited with: %v", err)
+	}
+}
+
+// TODO(matipan): clean this up to reuse the init of the service and tunnel
+// both here and in the gitCloneProxy
+func reverseProxy(ctx context.Context, client *dagger.Client, hooks *dagger.File) (stop func(), handler http.HandlerFunc) {
+	svc := webhookContainer(client).
+		WithFile("/hooks/hooks.json", hooks).
+		WithWorkdir("/hooks").
+		WithExposedPort(9000).
+		WithExec([]string{"-verbose", "-port", "9000", "-hooks", "hooks.json"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		AsService()
+
+	tunnel, err := client.Host().Tunnel(svc).Start(ctx)
+	if err != nil {
+		log.Fatalf("failed to start webhook container: %s", err)
+	}
+
+	endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http"})
+	if err != nil {
+		log.Fatalf("failed to obtain service endpoint: %s", err)
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		log.Fatalf("failed to parse endpoint: %s", err)
+	}
+
+	rp := httputil.NewSingleHostReverseProxy(u)
+
+	return func() {
+			svc.Stop(ctx)
+			tunnel.Stop(ctx)
+		}, func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("proxying request to %s", endpoint)
+			rp.ServeHTTP(w, r)
+		}
 }
 
 type GithubWebhook struct {
@@ -52,7 +132,7 @@ type GithubWebhook struct {
 
 // gitCloneProxy returns a handler that will first clone a git repository into
 // the specified directory and then proxy the request to the reverse proxy.
-func gitCloneProxy() func(http.ResponseWriter, *http.Request) {
+func gitCloneProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {

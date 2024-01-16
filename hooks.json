@@ -1,0 +1,38 @@
+[{
+  "id": "webhook",
+  "execute-command": "dagger",
+  "include-command-output-in-response": true,
+  "response-headers": [
+    {
+      "name": "Access-Control-Allow-Origin",
+      "value": "*"
+    }
+  ],
+  "pass-arguments-to-command": [
+    {
+      "source": "string",
+      "name": "--debug"
+    },
+    {
+      "source": "string",
+      "name": "--progress=plain"
+    },
+    {
+      "source": "string",
+      "name": "call"
+    },
+
+    {
+      "source": "string",
+      "name": "-m"
+    },
+    {
+      "source": "string",
+      "name": "github.com/shykes/daggerverse/hello"
+    },
+    {
+      "source": "string",
+      "name": "message"
+    }
+  ]
+}]

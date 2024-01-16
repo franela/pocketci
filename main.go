@@ -6,7 +6,7 @@ import (
 
 type Webhook struct{}
 
-func (m *Webhook) Webhook(ctx context.Context) (*Service, error) {
+func (m *Webhook) Webhook(ctx context.Context, hooks Optional[*File]) (*Service, error) {
 	goModCache := dag.CacheVolume("gomod")
 	goBuildCache := dag.CacheVolume("gobuild")
 	proxyFile := dag.Container().
@@ -19,12 +19,21 @@ func (m *Webhook) Webhook(ctx context.Context) (*Service, error) {
 		WithExec([]string{"go", "build", "-ldflags", "-s -w", "-o", "proxy", "."}).
 		File("proxy")
 
-	return dag.
+	c := dag.
 		Container().
 		From("alpine").
 		WithExposedPort(8080).
-		WithFile("/proxy", proxyFile).
-		// we need nesting since the proxy uses dagger start webhook and
-		WithExec([]string{"/proxy"}, ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		WithFile("/proxy", proxyFile)
+
+	exec := []string{"/proxy"}
+	hooksFile, ok := hooks.Get()
+	if ok {
+		c = c.WithFile("/hooks.json", hooksFile)
+		exec = append(exec, "-hooks", "/hooks.json")
+	}
+
+	// we need nesting since the proxy uses dagger start webhook and
+	return c.
+		WithExec(exec, ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 		AsService(), nil
 }
