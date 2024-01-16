@@ -12,6 +12,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 
 	"dagger.io/dagger"
 )
@@ -78,9 +79,11 @@ func gitCloneProxy() func(http.ResponseWriter, *http.Request) {
 		defer client.Close()
 
 		repo := client.Git("https://github.com/" + gh.Repository.FullName).Commit(gh.After).Tree()
+		fullRepo := strings.Split(gh.Repository.FullName, "/")
+		repoName := fullRepo[len(fullRepo)-1]
 		svc := webhookContainer(client).
-			WithDirectory("/repo", repo).
-			WithWorkdir("/repo").
+			WithDirectory("/"+repoName, repo).
+			WithWorkdir("/"+repoName).
 			WithExposedPort(9000).
 			WithExec([]string{"-verbose", "-port", "9000", "-hooks", "hooks.json"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 			AsService()
