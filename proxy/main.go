@@ -75,28 +75,30 @@ func gitCloneProxy() func(http.ResponseWriter, *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 		defer client.Close()
 
 		repo := client.Git("https://github.com/" + gh.Repository.FullName).Commit(gh.After).Tree()
-		wsvc := webhookContainer(client).
+		svc := webhookContainer(client).
 			WithDirectory("/repo", repo).
 			WithWorkdir("/repo").
 			WithExposedPort(9000).
 			WithExec([]string{"-verbose", "-port", "9000", "-hooks", "hooks.json"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 			AsService()
 
-		log.Println("starting tunnel")
-		svc, err := client.Host().Tunnel(wsvc).Start(ctx)
+		tunnel, err := client.Host().Tunnel(svc).Start(ctx)
 		if err != nil {
 			log.Printf("failed to start webhook container: %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer wsvc.Stop(ctx)
+		defer func() {
+			log.Println("stopping service")
+			svc.Stop(ctx)
+			log.Println("stopping tunnel")
+			tunnel.Stop(ctx)
+		}()
 
-		log.Println("getting endpoint")
-		endpoint, err := svc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http"})
+		endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http"})
 		if err != nil {
 			log.Printf("failed to obtain service endpoint: %s", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
