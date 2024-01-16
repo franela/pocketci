@@ -70,7 +70,7 @@ The working directory of your command will contain the entire contents of your r
 
 ## Webhook server
 Write a `hooks.json`. For example one that runs a dagger call on every single request:
-```
+```json
 {
   "id": "webhook",
   "execute-command": "dagger",
