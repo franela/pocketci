@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 
 	"dagger.io/dagger"
@@ -23,7 +25,7 @@ func main() {
 		log.Fatalf("failed to connect to dagger: %v", err)
 	}
 
-	if _, err := webhookContainer(client).Sync(ctx); err != nil {
+	if _, err = webhookContainer(client).Sync(ctx); err != nil {
 		log.Fatalf("failed to build webhook: %v", err)
 	}
 
@@ -72,13 +74,55 @@ func gitCloneProxy() func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		// TODO clone git repository and initialize the webhook container
-		// with the cloned repository.
-		// client.Git(gh.Repository.FullName).Commit(gh.After).
-		// Tree()
+		repo := client.Git("https://github.com/" + gh.Repository.FullName).Commit(gh.After).Tree()
+		wsvc := webhookContainer(client).
+			WithDirectory("/repo", repo).
+			WithWorkdir("/repo").
+			WithExposedPort(9000).
+			WithExec([]string{"-port", "9000", "-hooks", "hooks.json"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+			AsService()
 
-		// TODO call the reverseo proxy on the webhook container initiliazed above
-		// rproxy.ServeHTTP(w, r)
+		log.Println("starting tunnel")
+		svc, err := client.Host().Tunnel(wsvc).Start(ctx)
+		if err != nil {
+			log.Printf("failed to start webhook container: %s", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer svc.Stop(ctx)
+
+		log.Println("getting endpoint")
+		endpoint, err := svc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http"})
+		if err != nil {
+			log.Printf("failed to obtain service endpoint: %s", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		u, err := url.Parse(endpoint)
+		if err != nil {
+			log.Printf("failed to parse endpoint: %s", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		for {
+			log.Println("sending request")
+			res, err := http.Get(endpoint)
+			if err != nil {
+				log.Println("failed", err)
+				return
+			}
+			res.Body.Close()
+			log.Println(res.StatusCode)
+			if res.StatusCode == 200 {
+				log.Println("service is up")
+				break
+			}
+		}
+
+		log.Printf("proxying request to %s", endpoint)
+		httputil.NewSingleHostReverseProxy(u).ServeHTTP(w, r)
 	}
 }
 
