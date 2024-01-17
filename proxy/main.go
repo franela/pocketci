@@ -48,7 +48,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to read hooks file: %v", err)
 		}
-		fmt.Println(hooks)
 		if hooks == "" {
 			log.Fatalf("hooks file is empty")
 		}
