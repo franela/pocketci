@@ -149,10 +149,10 @@ func handleRequest(ctx context.Context, async bool, client *dagger.Client, svc *
 		return
 	}
 
-	res := httptest.NewRecorder()
 	log.Printf("proxying request async")
 	go func() {
 		ctx := context.Background()
+		res := httptest.NewRecorder()
 		r = r.WithContext(ctx)
 		proxyRequest(ctx, client, svc, res, r)
 		log.Printf("async request finished with status %d and body: %s", res.Code, res.Body.String())
