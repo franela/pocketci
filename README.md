@@ -1,13 +1,13 @@
-# webhook
+# pocketci
 
 **This is very much a work in progress, expect things to be rough and potentially break!**
 
-`webhook` is a Dagger module that leverages the Dagger SDK to wrap [webhook](https://github/adnanh/webhook) with some nice functionalities. It allows you to run dagger commands (and any other kind of commands) in one of two ways:
+`pocketci` is the first small and trully portable CI engine. This project is built as a dagger module that leverages the Dagger SDK to wrap [webhook](https://github/adnanh/webhook) with some nice functionalities. It allows you to run dagger commands (and any other kind of commands) in one of two ways:
 - Portable CI runner: By starting the service as is you can hook it to a repository through webhooks and run commands in the context of your repo (like doing a `checkout` on github actions first!)
 - Webhook server: By providing a `hooks.json` on startup you can leverage Dagger modules to hook them into specific webhooks (like a Slack Webhook)
 
 ## Portable CI runner
-1. Start the service: `dagger up -m github.com/franela/webhook -p 8080:8080`
+1. Start the service: `dagger up -m github.com/franela/pocketci -p 8080:8080`
 2. Expose it to the internet (you can use the likes of `ngrok` to expose local endpoints)
 3. Connect your repository by setting up a webhook in your VCS (github is the only supported at the moment)
 4. Write a hooks.json file that triggers a dagger command on every commit to the main branch. For example on a github repo:
@@ -113,7 +113,7 @@ Write a `hooks.json`. For example one that runs a dagger call on every single re
 }
 ```
 
-Run it with: `dagger up -p 8081:8080 webhook --hooks hooks.json`. You can validate that your webhook is triggered: `curl http://localhost:8080/hooks/webhook`. You should see a response such as:
+Run it with: `dagger up -p 8081:8080 -m github.com/franela/pocketci --hooks hooks.json`. You can validate that your webhook is triggered: `curl http://localhost:8080/hooks/webhook`. You should see a response such as:
 ```
 1: load call
 1: loading module
