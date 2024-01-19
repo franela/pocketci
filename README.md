@@ -68,6 +68,8 @@
 
 The working directory of your command will contain the entire contents of your repository at the specified `ref` so you could run commands from your own dagger module.
 
+By default it proxies requests in a synchronous way, meaning that the execution of your commands will block the incoming requests. This could be a problem if you are exposing this to a provider such as a Github that has a [timeout of 10 seconds](https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/troubleshooting-webhooks#timed-out). To force every request to be processed in an async way, you can pass the flag `--proxy-async`.
+
 ## Webhook server
 Write a `hooks.json`. For example one that runs a dagger call on every single request:
 ```json
@@ -127,5 +129,3 @@ DEBUG: executing query="query{hello{message}}"
 Hello, World!
 2: dagger call message DONE
 ```
-
-**NOTE:** there is currently an [issue]() with the use of services in the context of dagger modules. If you re-run this process again Dagger will be stuck at `starting session`. The quick-fix at the time of this writing is to `docker rm -f` the Dagger engine and start over.

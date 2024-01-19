@@ -6,7 +6,7 @@ import (
 
 type Webhook struct{}
 
-func (m *Webhook) Webhook(ctx context.Context, hooks Optional[*File]) (*Service, error) {
+func (m *Webhook) Webhook(ctx context.Context, hooks Optional[*File], proxyAsync Optional[bool]) (*Service, error) {
 	goModCache := dag.CacheVolume("gomod")
 	goBuildCache := dag.CacheVolume("gobuild")
 	proxyFile := dag.Container().
@@ -30,6 +30,10 @@ func (m *Webhook) Webhook(ctx context.Context, hooks Optional[*File]) (*Service,
 	if ok {
 		c = c.WithFile("/hooks.json", hooksFile)
 		exec = append(exec, "-hooks", "/hooks.json")
+	}
+
+	if _, ok = proxyAsync.Get(); ok {
+		exec = append(exec, "-async", "true")
 	}
 
 	// we need nesting since the proxy uses dagger start webhook and
