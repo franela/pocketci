@@ -1,7 +1,4 @@
 {
-  "name": "webhook",
-  "sdk": "go",
-  "dependencies": [
-    "github.com/sagikazarmark/daggerverse/go@329116361218e383992277d7a3ca5d1acb1fc163"
-  ]
+  "name": "pocketci",
+  "sdk": "go"
 }

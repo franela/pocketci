@@ -4,9 +4,10 @@ import (
 	"context"
 )
 
-type Webhook struct{}
+type Pocketci struct{}
 
-func (m *Webhook) Webhook(ctx context.Context, hooks Optional[*File], async Optional[bool]) (*Service, error) {
+// Starts the pocketci web handler
+func (m *Pocketci) Serve(ctx context.Context, hooks Optional[*File], async Optional[bool]) (*Service, error) {
 	goModCache := dag.CacheVolume("gomod")
 	goBuildCache := dag.CacheVolume("gobuild")
 	proxyFile := dag.Container().
