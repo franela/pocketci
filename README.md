@@ -2,10 +2,14 @@
 
 **This is very much a work in progress, expect things to be rough and potentially break!**
 
-`pocketci` is the first small and trully portable CI engine. This project is built as a dagger module that leverages the Dagger SDK to wrap [webhook](https://github/adnanh/webhook) with some nice functionalities. It allows you to run dagger commands (and any other kind of commands) in one of two ways:
+`pocketci` is the first small and trully portable CI engine. This project leverages the Dagger SDK to wrap [webhook](https://github/adnanh/webhook) with ability to automatically clone repositories. It allows you to run dagger commands (and any other kind of commands) in one of two ways:
 
 - Portable CI runner: By starting the service as is you can hook it to a repository through webhooks and run commands in the context of your repo (like doing a `checkout` on github actions first!)
 - Webhook server: By providing a `hooks.json` on startup you can leverage Dagger modules to hook them into specific webhooks (like a Slack Webhook)
+
+### Next steps
+
+Using [webhook](https://github/adnanh/webhook) allowed us to quickly test the idea of a CI engine that by leveraging Dagger in a native way becomes truly portable. The use of this project means we are limited by the definitions of the `hooks.json` format which, while being very useful, does not integrate in a native way with Dagger. We want pocketci to integrate seamlessly with Dagger and Dagger modules. You can join the discussion on how to build that [here](https://github.com/franela/pocketci/issues/2).
 
 ## Portable CI runner
 
