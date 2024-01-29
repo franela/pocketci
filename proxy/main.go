@@ -16,10 +16,11 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"gopkg.in/yaml.v3"
 )
 
 var (
-	hooksPath = flag.String("hooks", "", "path to an optional hooks.json file. If not provided it will start in gitCloneProxy mode")
+	hooksPath = flag.String("hooks", "", "path to an optional hooks.yaml file. If not provided it will start in gitCloneProxy mode")
 	repos     = flag.String("repos", "", "allow-list of owner/repo. If not specified all repos are valid. If `hooks` is specified, this will be ignored")
 	async     = flag.Bool("async", false, "if true, the webhook will be executed asynchronously")
 )
@@ -74,10 +75,10 @@ func main() {
 func reverseProxy(ctx context.Context, client *dagger.Client, async bool, hooks *dagger.File) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		svc := webhookContainer(client).
-			WithFile("/hooks/hooks.json", hooks).
+			WithFile("/hooks/hooks.yaml", hooks).
 			WithWorkdir("/hooks").
 			WithExposedPort(9000).
-			WithExec([]string{"-verbose", "-port", "9000", "-hooks", "hooks.json"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+			WithExec([]string{"-verbose", "-port", "9000", "-hooks", "hooks.yaml"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 			AsService()
 
 		handleRequest(ctx, async, client, svc, w, r)
@@ -121,6 +122,7 @@ func gitCloneProxy(async bool) http.HandlerFunc {
 
 		// we always want to execute webhooks in a synchronous way from our point
 		// of view, so we always force `include-command-output-in-response` to true
+		ctx = context.Background()
 		repo := client.Git("https://github.com/" + gh.Repository.FullName).Commit(gh.After).Tree()
 		repo, err = forceSyncOutput(ctx, repo)
 		if err != nil {
@@ -135,7 +137,7 @@ func gitCloneProxy(async bool) http.HandlerFunc {
 			WithDirectory("/"+repoName, repo).
 			WithWorkdir("/"+repoName).
 			WithExposedPort(9000).
-			WithExec([]string{"-verbose", "-port", "9000", "-hooks", "hooks.json"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+			WithExec([]string{"-verbose", "-port", "9000", "-hooks", "hooks.yaml"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 			AsService()
 		handleRequest(ctx, async, client, svc, w, r)
 	}
@@ -195,13 +197,13 @@ func proxyRequest(ctx context.Context, client *dagger.Client, svc *dagger.Servic
 }
 
 func forceSyncOutput(ctx context.Context, repo *dagger.Directory) (*dagger.Directory, error) {
-	repoHooks, err := repo.File("hooks.json").Contents(ctx)
+	repoHooks, err := repo.File("hooks.yaml").Contents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read hooks file: %w", err)
 	}
 
 	hooksDef := []map[string]any{}
-	if err = json.Unmarshal([]byte(repoHooks), &hooksDef); err != nil {
+	if err = yaml.Unmarshal([]byte(repoHooks), &hooksDef); err != nil {
 		return nil, fmt.Errorf("failed to decode hooks file: %w", err)
 	}
 
@@ -209,11 +211,11 @@ func forceSyncOutput(ctx context.Context, repo *dagger.Directory) (*dagger.Direc
 		hook["include-command-output-in-response"] = true
 	}
 
-	syncHooks, err := json.Marshal(hooksDef)
+	syncHooks, err := yaml.Marshal(hooksDef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode hooks file: %w", err)
 	}
-	return repo.WithNewFile("hooks.json", string(syncHooks)), nil
+	return repo.WithNewFile("hooks.yaml", string(syncHooks)), nil
 }
 
 func webhookContainer(c *dagger.Client) *dagger.Container {
