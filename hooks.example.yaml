@@ -1,0 +1,27 @@
+- id: git-push
+  execute-command: "/bin/dagger"
+  include-command-output-in-response: true
+  command-working-directory: "/hooks-test"
+  pass-arguments-to-command:
+  - source: string
+    name: call
+  - source: string
+    name: container-echo
+  - source: string
+    name: "--string-arg"
+  - source: payload
+    name: commits.0.message
+  trigger-rule:
+    and:
+    - match:
+        type: payload-hmac-sha1
+        secret: itsasecret
+        parameter:
+          source: header
+          name: X-Hub-Signature
+    - match:
+        type: value
+        value: refs/heads/main
+        parameter:
+          source: payload
+          name: ref
