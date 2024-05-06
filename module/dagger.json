@@ -1,4 +1,6 @@
 {
   "name": "pocketci",
-  "sdk": "go"
+  "sdk": "go",
+  "source": ".",
+  "engineVersion": "v0.11.1"
 }

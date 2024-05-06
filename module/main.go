@@ -47,17 +47,20 @@ func (m *Pocketci) BaseContainer(ctx context.Context, src *Directory) *Container
 }
 
 // Starts the pocketci web handler
-func (m *Pocketci) Serve(ctx context.Context, src *Directory, hooks Optional[*File], async Optional[bool]) (*Service, error) {
+func (m *Pocketci) Serve(ctx context.Context, src *Directory,
+	// +optional
+	hooks *File,
+	// +optional
+	async bool) (*Service, error) {
 	c := m.BaseContainer(ctx, src)
 
 	exec := []string{}
-	hooksFile, ok := hooks.Get()
-	if ok {
-		c = c.WithFile("/hooks.yaml", hooksFile)
+	if hooks != nil {
+		c = c.WithFile("/hooks.yaml", hooks)
 		exec = append(exec, "-hooks", "/hooks.yaml")
 	}
 
-	if _, ok = async.Get(); ok {
+	if async {
 		exec = append(exec, "-async", "true")
 	}
 
