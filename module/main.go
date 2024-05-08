@@ -29,7 +29,7 @@ func (m *Pocketci) BaseContainer(ctx context.Context, src *Directory) *Container
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithMountedCache("/go/pkg/mod", goModCache).
 		WithMountedCache("/root/.cache/go-build", goBuildCache).
-		WithExec([]string{"go", "build", "-ldflags", "-s -w", "-o", "pocketci", "./proxy"}).
+		WithExec([]string{"go", "build", "-ldflags", "-s -w", "-o", "pocketci", "./agent"}).
 		File("pocketci")
 
 	return dag.
