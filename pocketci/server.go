@@ -20,6 +20,7 @@ const GithubEventTypeHeader = "X-Github-Event"
 type GithubEvent struct {
 	EventType string          `json:"event_type"`
 	Payload   json.RawMessage `json:"payload"`
+	Changes   []string        `json:"changes"`
 }
 
 type Server struct {
@@ -67,7 +68,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // TODO: Support other VCS
 func (s *Server) HandleRequest(ctx context.Context, event *GithubEvent, r *http.Request) error {
-	svc, err := s.agent.HandleGithub(ctx, event, s.agent.CreateGithubSecret(s.opts.GithubUsername, s.opts.GithubPassword))
+	svc, err := s.agent.HandleGithub(ctx, s.agent.CreateGithubSecret(s.opts.GithubUsername, s.opts.GithubPassword), event)
 	if err != nil {
 		log.Printf("failed to handle github request: %s\n", err)
 		return err
