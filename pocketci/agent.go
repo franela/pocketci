@@ -35,22 +35,26 @@ func (agent *Agent) CreateGithubSecret(username, password string) *dagger.Secret
 	return agent.dag.SetSecret("github_auth", fmt.Sprintf("machine github.com login %s password %s", username, password))
 }
 
-func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, githubEvent *GithubEvent) (*dagger.Directory, string, error) {
+func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, githubEvent *GithubEvent) (gitRepo *dagger.Directory, repoName string, changes []string, err error) {
 	event, err := github.ParseWebHook(githubEvent.EventType, githubEvent.Payload)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	var (
 		gitSha     string
 		repository string
 		ref        string
+		baseRef    string
+		baseSha    string
 	)
 	switch ghEvent := event.(type) {
 	case *github.PullRequestEvent:
 		gitSha = *ghEvent.PullRequest.Head.SHA
 		repository = *ghEvent.Repo.FullName
 		ref = *ghEvent.PullRequest.Head.Ref
+		baseRef = *ghEvent.PullRequest.Base.Ref
+		baseSha = *ghEvent.PullRequest.Base.SHA
 	case *github.PushEvent:
 		// NOTE: If users have `PushEvent` enabled in their lists of webhooks
 		// then we receive duplicated events every time a commit is pushed to
@@ -66,62 +70,81 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, githu
 		repository = *ghEvent.Repo.FullName
 		ref = *ghEvent.Ref
 		if ref != "main" && ref != "master" && ref != "develop" && ref != "trunk" {
-			return nil, "", ErrPushEventIgnored
+			return nil, "", nil, ErrPushEventIgnored
 		}
 	}
 
 	fullRepo := strings.Split(repository, "/")
 	repo := fullRepo[len(fullRepo)-1]
 
+	ct := BaseContainer(agent.dag).
+		WithEnvVariable("CACHE_BUST", time.Now().String()).
+		WithMountedSecret("/root/.netrc", netrc)
+
 	// NOTE: it is important that we check out the repository with at least some
 	// history. We need at least two commits (or just one if its the initial commit)
 	// in order to compute the list of changes of the latest commit. We use
 	// a manual git clone instead of dagger's builtin dag.Git function because
 	// of this requirement.
-	dir, err := BaseContainer(agent.dag).
-		WithEnvVariable("CACHE_BUST", time.Now().String()).
-		WithMountedSecret("/root/.netrc", netrc).
+	dir, err := ct.
 		WithExec([]string{"git", "clone", "--single-branch", "--branch", ref, "--depth", "10", "https://github.com/" + repository}).
 		WithWorkdir("/" + repo).
 		WithExec([]string{"git", "checkout", gitSha}).
 		Directory("/" + repo).
 		Sync(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
-	return dir, repo, nil
+
+	var filesChanged string
+	// if there is a baseRef then we need to make a comparisson of all the files
+	// being changed
+	if baseRef != "" {
+		filesChanged, err = ct.
+			WithDirectory("/repo", dir).
+			WithWorkdir("/repo").
+			WithExec([]string{"git", "fetch", "origin", baseRef}).
+			WithExec([]string{"git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD", baseSha}).
+			Stdout(ctx)
+		if err != nil {
+			return nil, "", nil, err
+		}
+	} else {
+		filesChanged, err = ct.
+			WithDirectory("/repo", dir).
+			WithWorkdir("/repo").
+			WithExec([]string{"git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"}).
+			Stdout(ctx)
+	}
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	return dir, repo, strings.Split(strings.TrimSuffix(filesChanged, "\n"), "\n"), nil
 }
 
 func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, event *GithubEvent) (*dagger.Service, error) {
-	repoDir, repo, err := agent.GithubClone(ctx, netrc, event)
+	repoDir, repo, filesChanged, err := agent.GithubClone(ctx, netrc, event)
 	if err != nil {
 		return nil, err
 	}
 
-	ct := WebhookContainer(agent.dag).
-		WithEnvVariable("CACHE_BUST", time.Now().String()).
-		WithDirectory("/"+repo, repoDir).
-		WithWorkdir("/" + repo)
-
-	filesChanged, err := ct.
-		WithExec([]string{"git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"}).
-		Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
-	event.Changes = strings.Split(strings.TrimSuffix(filesChanged, "\n"), "\n")
+	event.Changes = filesChanged
 
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return nil, err
 	}
 
-	secrets, err := agent.parseSecretParameters(ctx, repoDir.File("dispatcher/dagger.json"))
+	secrets, err := agent.parseSecretParameters(ctx, repoDir.File("dispatcher/pocketci.json"))
 	if err != nil {
 		return nil, err
 	}
 
-	return ct.
+	return WebhookContainer(agent.dag).
+		WithEnvVariable("CACHE_BUST", time.Now().String()).
+		WithDirectory("/"+repo, repoDir).
+		WithWorkdir("/"+repo).
 		WithNewFile("/payload.json", dagger.ContainerWithNewFileOpts{
 			Contents: string(payload),
 		}).
