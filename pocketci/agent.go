@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/dag"
 
 	"github.com/google/go-github/v61/github"
 )
@@ -114,13 +116,110 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, even
 		return nil, err
 	}
 
+	secrets, err := agent.parseSecretParameters(ctx, repoDir.File("dispatcher/dagger.json"))
+	if err != nil {
+		return nil, err
+	}
+
 	return ct.
 		WithNewFile("/payload.json", dagger.ContainerWithNewFileOpts{
 			Contents: string(payload),
 		}).
+		WithFile(fmt.Sprintf("/%s/hooks.yaml", repo), agent.hooksFile(ctx, repo, os.Getenv("X_HUB_SIGNATURE"), secrets)).
+		With(func(c *dagger.Container) *dagger.Container {
+			for _, secret := range secrets {
+				c = c.WithSecretVariable(secret.EnvVariable, agent.dag.SetSecret(secret.ParameterName, os.Getenv(secret.EnvVariable)))
+			}
+			return c
+		}).
 		WithExposedPort(9000).
 		WithExec([]string{"/usr/local/bin/webhook", "-verbose", "-port", "9000", "-hooks", "hooks.yaml"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 		AsService(), nil
+}
+
+type DaggerConfig struct {
+	Secrets []string `json:"secrets"`
+}
+
+type DispatchSecret struct {
+	ParameterName string
+	EnvVariable   string
+}
+
+func (agent *Agent) parseSecretParameters(ctx context.Context, config *dagger.File) ([]DispatchSecret, error) {
+	file, err := config.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg DaggerConfig
+	if err := json.Unmarshal([]byte(file), &cfg); err != nil {
+		return nil, err
+	}
+
+	if len(cfg.Secrets) == 0 {
+		return []DispatchSecret{}, nil
+	}
+
+	secrets := []DispatchSecret{}
+	for _, secret := range cfg.Secrets {
+		split := strings.Split(secret, ":")
+		if len(split) != 2 {
+			return nil, fmt.Errorf("invalid secret: expected `parameterName:ENV_VARIABLE_NAME` got %s", secret)
+		}
+		secrets = append(secrets, DispatchSecret{ParameterName: split[0], EnvVariable: split[1]})
+	}
+
+	return secrets, nil
+}
+
+func (agent *Agent) hooksFile(ctx context.Context, repo, xHubSignature string, secrets []DispatchSecret) *dagger.File {
+	var encodedSecrets string
+	for _, secret := range secrets {
+		encodedSecrets = fmt.Sprintf(`%s
+  - source: string
+    name: "--%s"
+  - source: string
+    name: "env:%s"`, encodedSecrets, secret.ParameterName, secret.EnvVariable)
+	}
+
+	return dag.Container().
+		WithNewFile("/hooks.yaml", dagger.ContainerWithNewFileOpts{
+			Contents: fmt.Sprintf(`- id: git-push
+  execute-command: "/bin/dagger"
+  include-command-output-in-response: true
+  command-working-directory: "/%s"
+  pass-arguments-to-command:
+  - source: string
+    name: call
+  - source: string
+    name: "--mod"
+  - source: string
+    name: "./dispatcher"
+  - source: string
+    name: "--progress"
+  - source: string
+    name: "plain"
+  - source: string
+    name: "dispatch"
+  - source: string
+    name: "--src"
+  - source: string
+    name: "."
+  - source: string
+    name: "--payload"
+  - source: string
+    name: "/payload.json"
+%s
+  trigger-rule:
+    and:
+    - match:
+        type: payload-hmac-sha1
+        secret: %s
+        parameter:
+          source: header
+          name: X-Hub-Signature`, repo, encodedSecrets, xHubSignature)}).
+		File("/hooks.yaml")
 }
 
 func BaseContainer(c *dagger.Client) *dagger.Container {
