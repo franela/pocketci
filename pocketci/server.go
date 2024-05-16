@@ -17,10 +17,24 @@ import (
 
 const GithubEventTypeHeader = "X-Github-Event"
 
-type GithubEvent struct {
-	EventType string          `json:"event_type"`
-	Payload   json.RawMessage `json:"payload"`
-	Changes   []string        `json:"changes"`
+type Views struct {
+	List []View `json:"list"`
+}
+
+type View struct {
+	Name   string `json:"name"`
+	Active bool   `json:"active"`
+}
+
+type Event struct {
+	EventType string   `json:"event_type"`
+	Changes   []string `json:"changes"`
+	Views     Views    `json:"views"`
+}
+
+type event struct {
+	Event
+	Payload json.RawMessage `json:"payload"`
 }
 
 type Server struct {
@@ -55,9 +69,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Body = io.NopCloser(bytes.NewBuffer(b))
 
 	go func() {
-		githubEvent := &GithubEvent{
-			EventType: r.Header.Get(GithubEventTypeHeader),
-			Payload:   json.RawMessage(b),
+		githubEvent := &event{
+			Event: Event{
+				EventType: r.Header.Get(GithubEventTypeHeader),
+			},
+			Payload: json.RawMessage(b),
 		}
 		ctx := context.Background()
 		s.HandleRequest(ctx, githubEvent, r.WithContext(ctx))
@@ -67,7 +83,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // TODO: Support other VCS
-func (s *Server) HandleRequest(ctx context.Context, event *GithubEvent, r *http.Request) error {
+func (s *Server) HandleRequest(ctx context.Context, event *event, r *http.Request) error {
 	svc, err := s.agent.HandleGithub(ctx, s.agent.CreateGithubSecret(s.opts.GithubUsername, s.opts.GithubPassword), event)
 	if err != nil {
 		log.Printf("failed to handle github request: %s\n", err)

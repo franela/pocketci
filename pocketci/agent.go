@@ -12,6 +12,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
 
+	"github.com/bmatcuk/doublestar"
 	"github.com/google/go-github/v61/github"
 )
 
@@ -35,8 +36,8 @@ func (agent *Agent) CreateGithubSecret(username, password string) *dagger.Secret
 	return agent.dag.SetSecret("github_auth", fmt.Sprintf("machine github.com login %s password %s", username, password))
 }
 
-func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, githubEvent *GithubEvent) (gitRepo *dagger.Directory, repoName string, changes []string, err error) {
-	event, err := github.ParseWebHook(githubEvent.EventType, githubEvent.Payload)
+func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event *event) (gitRepo *dagger.Directory, repoName string, changes []string, err error) {
+	githubEvent, err := github.ParseWebHook(event.EventType, event.Payload)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -48,7 +49,7 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, githu
 		baseRef    string
 		baseSha    string
 	)
-	switch ghEvent := event.(type) {
+	switch ghEvent := githubEvent.(type) {
 	case *github.PullRequestEvent:
 		gitSha = *ghEvent.PullRequest.Head.SHA
 		repository = *ghEvent.Repo.FullName
@@ -123,7 +124,7 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, githu
 	return dir, repo, strings.Split(strings.TrimSuffix(filesChanged, "\n"), "\n"), nil
 }
 
-func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, event *GithubEvent) (*dagger.Service, error) {
+func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, event *event) (*dagger.Service, error) {
 	repoDir, repo, filesChanged, err := agent.GithubClone(ctx, netrc, event)
 	if err != nil {
 		return nil, err
@@ -131,16 +132,29 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, even
 
 	event.Changes = filesChanged
 
+	views, err := parseDaggerViews(ctx, filesChanged, repoDir.File("dispatcher/dagger.json"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse dagger views: %w", err)
+	}
+
+	event.Views = *views
+
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println(string(payload))
 
 	secrets, err := agent.parseSecretParameters(ctx, repoDir.File("dispatcher/pocketci.json"))
 	if err != nil {
 		return nil, err
 	}
 
+	// TODO: technically with the direction that we are doing we do not need
+	// to have webhook as a dependency. The only missing piece here would be to
+	// validate the X-Hub-Signature header and thats it. We can make the dagger
+	// call directly ourselves, without having the reverse proxy in the middle
 	return WebhookContainer(agent.dag).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithDirectory("/"+repo, repoDir).
@@ -158,6 +172,51 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, even
 		WithExposedPort(9000).
 		WithExec([]string{"/usr/local/bin/webhook", "-verbose", "-port", "9000", "-hooks", "hooks.yaml"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 		AsService(), nil
+}
+
+func parseDaggerViews(ctx context.Context, filesChanged []string, daggerJson *dagger.File) (*Views, error) {
+	contents, err := daggerJson.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := struct {
+		Views []struct {
+			Name     string   `json:"name"`
+			Patterns []string `json:"patterns"`
+		} `json:"views"`
+	}{}
+
+	if err := json.Unmarshal([]byte(contents), &cfg); err != nil {
+		return nil, err
+	}
+
+	views := &Views{
+		List: []View{},
+	}
+	for _, view := range cfg.Views {
+		views.List = append(views.List, View{
+			Name:   view.Name,
+			Active: Match(filesChanged, view.Patterns...),
+		})
+	}
+
+	return views, nil
+}
+
+func Match(files []string, patterns ...string) bool {
+	for _, file := range files {
+		for _, pattern := range patterns {
+			match, err := doublestar.PathMatch(pattern, file)
+			if err != nil {
+				continue
+			}
+			if match {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type DaggerConfig struct {

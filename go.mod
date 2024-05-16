@@ -4,8 +4,8 @@ go 1.21.3
 
 require (
 	dagger.io/dagger v0.11.3
+	github.com/bmatcuk/doublestar v1.3.4
 	github.com/google/go-github/v61 v61.0.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
