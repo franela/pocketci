@@ -124,54 +124,51 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 	return dir, repo, strings.Split(strings.TrimSuffix(filesChanged, "\n"), "\n"), nil
 }
 
-func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, event *event) (*dagger.Service, error) {
+func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, event *event) error {
 	repoDir, repo, filesChanged, err := agent.GithubClone(ctx, netrc, event)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	event.Changes = filesChanged
 
 	views, err := parseDaggerViews(ctx, filesChanged, repoDir.File("dispatcher/dagger.json"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse dagger views: %w", err)
+		return fmt.Errorf("failed to parse dagger views: %w", err)
 	}
 
 	event.Views = *views
 
 	payload, err := json.Marshal(event)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	fmt.Println(string(payload))
 
 	secrets, err := agent.parseSecretParameters(ctx, repoDir.File("dispatcher/pocketci.json"))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// TODO: technically with the direction that we are doing we do not need
-	// to have webhook as a dependency. The only missing piece here would be to
-	// validate the X-Hub-Signature header and thats it. We can make the dagger
-	// call directly ourselves, without having the reverse proxy in the middle
-	return WebhookContainer(agent.dag).
+	stdout, err := AgentContainer(agent.dag).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithDirectory("/"+repo, repoDir).
 		WithWorkdir("/"+repo).
 		WithNewFile("/payload.json", dagger.ContainerWithNewFileOpts{
 			Contents: string(payload),
 		}).
-		WithFile(fmt.Sprintf("/%s/hooks.yaml", repo), agent.hooksFile(ctx, repo, os.Getenv("X_HUB_SIGNATURE"), secrets)).
 		With(func(c *dagger.Container) *dagger.Container {
+			args := []string{"call", "-m", "dispatcher", "--progress", "plain", "dispatch", "--src", ".", "--payload", "/payload.json"}
 			for _, secret := range secrets {
 				c = c.WithSecretVariable(secret.EnvVariable, agent.dag.SetSecret(secret.ParameterName, os.Getenv(secret.EnvVariable)))
+				args = append(args, fmt.Sprintf("--%s", secret.ParameterName))
+				args = append(args, fmt.Sprintf("env:%s", secret.EnvVariable))
 			}
-			return c
+			return c.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 		}).
-		WithExposedPort(9000).
-		WithExec([]string{"/usr/local/bin/webhook", "-verbose", "-port", "9000", "-hooks", "hooks.yaml"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
-		AsService(), nil
+		Stdout(ctx)
+
+	fmt.Println(stdout)
+	return err
 }
 
 func parseDaggerViews(ctx context.Context, filesChanged []string, daggerJson *dagger.File) (*Views, error) {
@@ -255,6 +252,24 @@ func (agent *Agent) parseSecretParameters(ctx context.Context, config *dagger.Fi
 	return secrets, nil
 }
 
+func BaseContainer(c *dagger.Client) *dagger.Container {
+	return c.Container().From("ubuntu:lunar").
+		WithExec([]string{"sh", "-c", "apt update && apt install -y curl wget git"})
+}
+
+func AgentContainer(c *dagger.Client) *dagger.Container {
+	return BaseContainer(c).
+		WithExec([]string{"sh", "-c", fmt.Sprintf(`cd / && DAGGER_VERSION="%s" curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION="%s" sh`, DaggerVersion, DaggerVersion)}).
+		WithEntrypoint([]string{"/bin/dagger"})
+}
+
+func WebhookContainer(c *dagger.Client) *dagger.Container {
+	return BaseContainer(c).
+		WithExec([]string{"wget", "-q", "https://github.com/adnanh/webhook/releases/download/2.8.1/webhook-linux-amd64.tar.gz"}).
+		WithExec([]string{"tar", "-C", "/usr/local/bin", "--strip-components", "1", "-xf", "webhook-linux-amd64.tar.gz", "webhook-linux-amd64/webhook"}).
+		WithExec([]string{"sh", "-c", fmt.Sprintf(`cd / && DAGGER_VERSION="%s" curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION="%s" sh`, DaggerVersion, DaggerVersion)})
+}
+
 func (agent *Agent) hooksFile(ctx context.Context, repo, xHubSignature string, secrets []DispatchSecret) *dagger.File {
 	var encodedSecrets string
 	for _, secret := range secrets {
@@ -302,16 +317,4 @@ func (agent *Agent) hooksFile(ctx context.Context, repo, xHubSignature string, s
           source: header
           name: X-Hub-Signature`, repo, encodedSecrets, xHubSignature)}).
 		File("/hooks.yaml")
-}
-
-func BaseContainer(c *dagger.Client) *dagger.Container {
-	return c.Container().From("ubuntu:lunar").
-		WithExec([]string{"sh", "-c", "apt update && apt install -y curl wget git"})
-}
-
-func WebhookContainer(c *dagger.Client) *dagger.Container {
-	return BaseContainer(c).
-		WithExec([]string{"wget", "-q", "https://github.com/adnanh/webhook/releases/download/2.8.1/webhook-linux-amd64.tar.gz"}).
-		WithExec([]string{"tar", "-C", "/usr/local/bin", "--strip-components", "1", "-xf", "webhook-linux-amd64.tar.gz", "webhook-linux-amd64/webhook"}).
-		WithExec([]string{"sh", "-c", fmt.Sprintf(`cd / && DAGGER_VERSION="%s" curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION="%s" sh`, DaggerVersion, DaggerVersion)})
 }

@@ -3,14 +3,16 @@ package pocketci
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/http/httptest"
-	"net/http/httputil"
-	"net/url"
+	"os"
+	"strings"
 
 	"dagger.io/dagger"
 )
@@ -49,7 +51,7 @@ type ServerOptions struct {
 
 func NewServer(dag *dagger.Client, opts ServerOptions) (*Server, error) {
 	// warmup the container that will be used for each request
-	if _, err := WebhookContainer(dag).Sync(context.Background()); err != nil {
+	if _, err := AgentContainer(dag).Sync(context.Background()); err != nil {
 		return nil, fmt.Errorf("warmup failed: %w", err)
 	}
 
@@ -60,6 +62,17 @@ func NewServer(dag *dagger.Client, opts ServerOptions) (*Server, error) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	sig := r.Header.Get("X-Hub-Signature")
+	if sig == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if err := validateGithubSignature(sig, os.Getenv("X_HUB_SIGNATURE")); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("failed to get request body: %s", err.Error())
@@ -76,46 +89,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Payload: json.RawMessage(b),
 		}
 		ctx := context.Background()
-		s.HandleRequest(ctx, githubEvent, r.WithContext(ctx))
+		if err := s.agent.HandleGithub(ctx, s.agent.CreateGithubSecret(s.opts.GithubUsername, s.opts.GithubPassword), githubEvent); err != nil {
+			log.Printf("failed to handle github request: %s\n", err)
+		}
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// TODO: Support other VCS
-func (s *Server) HandleRequest(ctx context.Context, event *event, r *http.Request) error {
-	svc, err := s.agent.HandleGithub(ctx, s.agent.CreateGithubSecret(s.opts.GithubUsername, s.opts.GithubPassword), event)
+func validateGithubSignature(signature string, secret string) error {
+	signature = strings.TrimPrefix(signature, "sha1=")
+
+	mac := hmac.New(sha1.New, []byte(secret))
+
+	_, err := mac.Write([]byte(signature))
 	if err != nil {
-		log.Printf("failed to handle github request: %s\n", err)
 		return err
 	}
 
-	tunnel, err := s.agent.dag.Host().Tunnel(svc).Start(ctx)
-	if err != nil {
-		log.Printf("failed to start webhook container: %s", err)
-		return err
-	}
-	defer func() {
-		log.Println("stopping service")
-		svc.Stop(ctx)
-		log.Println("stopping tunnel")
-		tunnel.Stop(ctx)
-	}()
+	actualMAC := hex.EncodeToString(mac.Sum(nil))
 
-	endpoint, err := tunnel.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http"})
-	if err != nil {
-		log.Printf("failed to obtain service endpoint: %s", err)
+	if hmac.Equal([]byte(signature), []byte(actualMAC)) {
 		return err
 	}
 
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		log.Printf("failed to parse endpoint: %s", err)
-		return err
-	}
-
-	log.Printf("proxying request to %s", endpoint)
-	res := httptest.NewRecorder()
-	httputil.NewSingleHostReverseProxy(u).ServeHTTP(res, r)
 	return nil
 }
