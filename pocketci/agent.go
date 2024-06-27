@@ -20,7 +20,7 @@ var (
 	ErrPushEventIgnored = errors.New("push event ignored due to duplication")
 )
 
-const DaggerVersion = "0.11.3"
+const DaggerVersion = "0.11.9"
 
 type Agent struct {
 	dag *dagger.Client
@@ -70,9 +70,9 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 		gitSha = *ghEvent.After
 		repository = *ghEvent.Repo.FullName
 		ref = *ghEvent.Ref
-		if ref != "main" && ref != "master" && ref != "develop" && ref != "trunk" {
-			return nil, "", nil, ErrPushEventIgnored
-		}
+		//if ref != "main" && ref != "master" && ref != "develop" && ref != "trunk" {
+		//	return nil, "", nil, ErrPushEventIgnored
+		//}
 	}
 
 	fullRepo := strings.Split(repository, "/")
@@ -151,6 +151,7 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, even
 
 	stdout, err := AgentContainer(agent.dag).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
+		WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
 		WithDirectory("/"+repo, repoDir).
 		WithWorkdir("/"+repo).
 		WithNewFile("/payload.json", dagger.ContainerWithNewFileOpts{
