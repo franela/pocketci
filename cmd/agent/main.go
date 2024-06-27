@@ -35,6 +35,7 @@ func main() {
 		Addr:    ":8080",
 		Handler: mux,
 	}
+
 	log.Println("starting proxy server in port 8080")
 	if err = srv.ListenAndServe(); err != nil {
 		log.Printf("serve exited with: %v", err)
