@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"net/url"
+
+	"github.com/franela/webhook/internal/dagger"
 )
 
 type Pocketci struct{}
 
-func (m *Pocketci) Publish(ctx context.Context, src *Directory, address, username string, password *Secret) (string, error) {
+func (m *Pocketci) Publish(ctx context.Context, src *dagger.Directory, address, username string, password *dagger.Secret) (string, error) {
 	u, err := url.Parse(address)
 	if err != nil {
 		return "", err
@@ -16,10 +18,10 @@ func (m *Pocketci) Publish(ctx context.Context, src *Directory, address, usernam
 
 	return m.BaseContainer(ctx, src).
 		WithRegistryAuth(registry, username, password).
-		Publish(ctx, address, ContainerPublishOpts{})
+		Publish(ctx, address, dagger.ContainerPublishOpts{})
 }
 
-func (m *Pocketci) BaseContainer(ctx context.Context, src *Directory) *Container {
+func (m *Pocketci) BaseContainer(ctx context.Context, src *dagger.Directory) *dagger.Container {
 	goModCache := dag.CacheVolume("gomod")
 	goBuildCache := dag.CacheVolume("gobuild")
 	pocketci := dag.Container().
@@ -47,14 +49,14 @@ func (m *Pocketci) BaseContainer(ctx context.Context, src *Directory) *Container
 }
 
 // Starts the pocketci web handler
-func (m *Pocketci) Serve(ctx context.Context, src *Directory,
+func (m *Pocketci) Serve(ctx context.Context, src *dagger.Directory,
 	// +optional
-	hooks *File,
+	hooks *dagger.File,
 	// +optional
-	async bool) (*Service, error) {
+	async bool) (*dagger.Service, error) {
 	c := m.BaseContainer(ctx, src)
 
-	exec := []string{}
+	exec := []string{"/pocketci"}
 	if hooks != nil {
 		c = c.WithFile("/hooks.yaml", hooks)
 		exec = append(exec, "-hooks", "/hooks.yaml")
@@ -66,6 +68,7 @@ func (m *Pocketci) Serve(ctx context.Context, src *Directory,
 
 	// we need nesting since the proxy uses dagger start webhook and
 	return c.
-		WithExec(exec, ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		WithoutEntrypoint(). // to get same behavior in 0.11 and 0.12
+		WithExec(exec, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
 		AsService(), nil
 }
