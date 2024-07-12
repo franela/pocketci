@@ -13,7 +13,7 @@ Using [webhook](https://github.com/adnanh/webhook) allowed us to quickly test th
 
 ## Portable CI runner
 
-1. Start the service: `dagger up -m github.com/franela/pocketci/module serve -p 8080:8080`
+1. Start the service: `dagger call -m github.com/franela/pocketci/module@pocketci-agent serve --src https://github.com/franela/pocketci#pocketci-agent up`
 2. Expose it to the internet (you can use the likes of `ngrok` to expose local endpoints)
 3. Connect your repository by setting up a webhook in your VCS (github is the only supported at the moment)
 4. Write a hooks.yaml file that triggers a dagger command on every commit to the main branch. For example on a github repo:
@@ -78,7 +78,18 @@ Write a `hooks.yaml`. For example one that runs a dagger call on every single re
       value: "Hello World!"
 ```
 
-Run it with: `dagger up -p 8081:8080 -m github.com/franela/pocketci/module serve --hooks hooks.yaml`. You can validate that your webhook is triggered: `curl http://localhost:8080/hooks/webhook`. You should see a response such as:
+Run it with:
+
+```console
+dagger call \
+ -m github.com/franela/pocketci/module@pocketci-agent \
+ serve \
+  --src https://github.com/franela/pocketci#pocketci-agent \
+  --hooks hooks.yaml \
+ up
+  ```
+
+  You can validate that your webhook is triggered: `curl http://localhost:8080/hooks/webhook`. You should see a response such as:
 
 ```
 1: load call
