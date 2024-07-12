@@ -40,11 +40,15 @@ func (m *Pocketci) BaseContainer(ctx context.Context, src *dagger.Directory) *da
 		WithExposedPort(8080).
 		WithFile("/pocketci", pocketci).
 		WithWorkdir("/").
-		WithExec([]string{"apk", "add", "--update", "--no-cache", "ca-certificates", "curl", "docker", "openrc"}).
-		WithExec([]string{"curl", "-LO", "https://github.com/dagger/dagger/releases/download/v0.9.7/dagger_v0.9.7_linux_amd64.tar.gz"}).
-		WithExec([]string{"tar", "xvf", "dagger_v0.9.7_linux_amd64.tar.gz"}).
+		WithExec([]string{"apk", "add", "--update", "--no-cache", "docker", "openrc"}).
+		WithFile(
+			"dagger.tgz",
+			dag.HTTP("https://github.com/dagger/dagger/releases/download/v0.11.9/dagger_v0.11.9_linux_amd64.tar.gz"),
+		).
+		WithExec([]string{"tar", "xvf", "dagger.tgz"}).
 		WithExec([]string{"mv", "dagger", "/bin/dagger"}).
-		WithExec([]string{"rm", "dagger_v0.9.7_linux_amd64.tar.gz", "LICENSE"}).
+		WithoutFile("dagger.tgz").
+		WithoutFile("LICENSE").
 		WithEntrypoint([]string{"/pocketci"})
 }
 
