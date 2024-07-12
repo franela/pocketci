@@ -23,14 +23,14 @@ func (m *Pocketci) BaseContainer(ctx context.Context, src *Directory) *Container
 	goModCache := dag.CacheVolume("gomod")
 	goBuildCache := dag.CacheVolume("gobuild")
 	pocketci := dag.Container().
-		From("golang:1.21-alpine").
+		From("golang:1.22-alpine").
 		WithDirectory("/app", src).
 		WithWorkdir("/app").
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithMountedCache("/go/pkg/mod", goModCache).
 		WithMountedCache("/root/.cache/go-build", goBuildCache).
-		WithExec([]string{"go", "build", "-ldflags", "-s -w", "-o", "pocketci", "./agent"}).
-		File("pocketci")
+		WithExec([]string{"go", "build", "-ldflags", "-s -w", "-o", "./bin/pocketci", "./cmd/agent"}).
+		File("./bin/pocketci")
 
 	return dag.
 		Container().
