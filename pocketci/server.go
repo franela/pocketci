@@ -11,7 +11,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 
 	"dagger.io/dagger"
@@ -19,82 +18,91 @@ import (
 
 const GithubEventTypeHeader = "X-Github-Event"
 
-type Views struct {
-	List []View `json:"list"`
-}
-
-type View struct {
-	Name   string `json:"name"`
-	Active bool   `json:"active"`
-}
-
 type Event struct {
-	EventType string   `json:"event_type"`
-	Changes   []string `json:"changes"`
-	Views     Views    `json:"views"`
+	EventType      string            `json:"event_type"`
+	Changes        []string          `json:"changes"`
+	RepoContents   *dagger.Directory `json:"-"`
+	RepositoryName string            `json:"repo_name"`
+
+	// Payload is the payload of the webhook in JSON format.
+	Payload json.RawMessage `json:"payload"`
 }
 
-type event struct {
-	Event
-	Payload json.RawMessage `json:"payload"`
+type GithubEvent struct {
+	EventType string
+	Payload   json.RawMessage `json:"payload"`
 }
 
 type Server struct {
 	agent *Agent
-	opts  ServerOptions
+
+	githubSecret    *dagger.Secret
+	githubSignature string
 }
 
 type ServerOptions struct {
-	GithubUsername string
-	GithubPassword string
+	GithubUsername  string
+	GithubPassword  string
+	GithubSignature string
 }
 
 func NewServer(dag *dagger.Client, opts ServerOptions) (*Server, error) {
 	// warmup the container that will be used for each request
+	// TODO: Should git operations be handled outside of Dagger? Could that have
+	// a positive perf impact that is worth it?
 	if _, err := AgentContainer(dag).Sync(context.Background()); err != nil {
 		return nil, fmt.Errorf("warmup failed: %w", err)
 	}
 
-	return &Server{
+	s := &Server{
 		agent: NewAgent(dag),
-		opts:  opts,
-	}, nil
+	}
+
+	if opts.GithubPassword != "" {
+		s.githubSecret = s.agent.CreateGithubSecret(opts.GithubUsername, opts.GithubPassword)
+		s.githubSignature = opts.GithubSignature
+	}
+
+	return s, nil
 }
 
+// TODO: generalize this code to support other VCS and event matchers in general
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	sig := r.Header.Get("X-Hub-Signature")
-	if sig == "" {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
+	switch {
+	// Github webhook
+	case r.Header.Get("X-Hub-Signature") != "":
+		sig := r.Header.Get("X-Hub-Signature")
+		if sig == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 
-	if err := validateGithubSignature(sig, os.Getenv("X_HUB_SIGNATURE")); err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
+		if err := validateGithubSignature(sig, s.githubSignature); err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
 
-	b, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("failed to get request body: %s", err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	r.Body = io.NopCloser(bytes.NewBuffer(b))
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			log.Printf("failed to get request body: %s", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewBuffer(b))
 
-	go func() {
-		githubEvent := &event{
-			Event: Event{
+		go func() {
+			ghEvent := &GithubEvent{
 				EventType: r.Header.Get(GithubEventTypeHeader),
-			},
-			Payload: json.RawMessage(b),
-		}
-		ctx := context.Background()
-		if err := s.agent.HandleGithub(ctx, s.agent.CreateGithubSecret(s.opts.GithubUsername, s.opts.GithubPassword), githubEvent); err != nil {
-			log.Printf("failed to handle github request: %s\n", err)
-		}
-	}()
+				Payload:   json.RawMessage(b),
+			}
+			ctx := context.Background()
+			if err := s.agent.HandleGithub(ctx, s.githubSecret, ghEvent); err != nil {
+				log.Printf("failed to handle github request: %s\n", err)
+			}
+		}()
 
-	w.WriteHeader(http.StatusAccepted)
+		w.WriteHeader(http.StatusAccepted)
+	}
 }
 
 func validateGithubSignature(signature string, secret string) error {

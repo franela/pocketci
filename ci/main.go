@@ -4,12 +4,12 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/franela/webhook/internal/dagger"
+	"dagger/ci/internal/dagger"
 )
 
-type Pocketci struct{}
+type Ci struct{}
 
-func (m *Pocketci) Publish(ctx context.Context, src *dagger.Directory, address, username string, password *dagger.Secret) (string, error) {
+func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, address, username string, password *dagger.Secret) (string, error) {
 	u, err := url.Parse(address)
 	if err != nil {
 		return "", err
@@ -21,16 +21,39 @@ func (m *Pocketci) Publish(ctx context.Context, src *dagger.Directory, address, 
 		Publish(ctx, address, dagger.ContainerPublishOpts{})
 }
 
-func (m *Pocketci) BaseContainer(ctx context.Context, src *dagger.Directory) *dagger.Container {
+func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, payload *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	pocketci := dag.Pocketci(payload)
+
+	switch {
+	case pocketci.OnPullRequest() != nil:
+		_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+		return err
+	}
+
+	return nil
+}
+
+func (m *Ci) Test(ctx context.Context, src *dagger.Directory, ghUsername, ghPassword *dagger.Secret) *dagger.Container {
+	return m.base(src).
+		WithSecretVariable("GH_USERNAME", ghUsername).
+		WithSecretVariable("GH_PASSWORD", ghPassword).
+		WithExec([]string{"sh", "-c", "go test -v ./pocketci/..."}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+}
+
+func (m *Ci) base(src *dagger.Directory) *dagger.Container {
 	goModCache := dag.CacheVolume("gomod")
 	goBuildCache := dag.CacheVolume("gobuild")
-	pocketci := dag.Container().
+	return dag.Container().
 		From("golang:1.22-alpine").
 		WithDirectory("/app", src).
 		WithWorkdir("/app").
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithMountedCache("/go/pkg/mod", goModCache).
-		WithMountedCache("/root/.cache/go-build", goBuildCache).
+		WithMountedCache("/root/.cache/go-build", goBuildCache)
+}
+
+func (m *Ci) BaseContainer(ctx context.Context, src *dagger.Directory) *dagger.Container {
+	pocketci := m.base(src).
 		WithExec([]string{"go", "build", "-ldflags", "-s -w", "-o", "./bin/pocketci", "./cmd/agent"}).
 		File("./bin/pocketci")
 
@@ -39,7 +62,6 @@ func (m *Pocketci) BaseContainer(ctx context.Context, src *dagger.Directory) *da
 		From("alpine:3.19").
 		WithExposedPort(8080).
 		WithFile("/pocketci", pocketci).
-		WithWorkdir("/").
 		WithExec([]string{"apk", "add", "--update", "--no-cache", "docker", "openrc"}).
 		WithFile(
 			"dagger.tgz",
@@ -53,7 +75,7 @@ func (m *Pocketci) BaseContainer(ctx context.Context, src *dagger.Directory) *da
 }
 
 // Starts the pocketci web handler
-func (m *Pocketci) Serve(ctx context.Context, src *dagger.Directory,
+func (m *Ci) Serve(ctx context.Context, src *dagger.Directory,
 	// +optional
 	hooks *dagger.File,
 	// +optional

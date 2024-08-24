@@ -1,0 +1,12 @@
+{
+  "name": "ci",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "pocketci",
+      "source": "../modules/pocketci"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.12.5"
+}

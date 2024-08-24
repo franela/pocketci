@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -17,16 +17,17 @@ func main() {
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
-		log.Fatalf("failed to connect to dagger: %v", err)
+		slog.Error("failed to connect to dagger", slog.String("error", err.Error()))
 	}
 	defer client.Close()
 
 	server, err := pocketci.NewServer(client, pocketci.ServerOptions{
-		GithubUsername: os.Getenv("GITHUB_USERNAME"),
-		GithubPassword: os.Getenv("GITHUB_TOKEN"),
+		GithubUsername:  os.Getenv("GITHUB_USERNAME"),
+		GithubPassword:  os.Getenv("GITHUB_TOKEN"),
+		GithubSignature: os.Getenv("X_HUB_SIGNATURE"),
 	})
 	if err != nil {
-		log.Fatalf("failed to create pocketci server: %s", err)
+		slog.Error("failed to create pocketci server", slog.String("error", err.Error()))
 	}
 
 	mux := http.NewServeMux()
@@ -36,8 +37,8 @@ func main() {
 		Handler: mux,
 	}
 
-	log.Println("starting proxy server in port 8080")
+	slog.Info("starting pocketci at 8080")
 	if err = srv.ListenAndServe(); err != nil {
-		log.Printf("serve exited with: %v", err)
+		slog.Error("server exited", slog.String("error", err.Error()))
 	}
 }
