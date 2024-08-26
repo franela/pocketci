@@ -77,8 +77,10 @@ With `pocketci` you instead take care of interpreting the `triggers` defined abo
 ```yaml
 module-path: ./ci
 events:
-  - pull_request
-  - push
+  pull_request:
+    - main
+  push:
+    - main
 paths:
   - "**/**.go"
 secrets:
@@ -88,7 +90,7 @@ secrets:
     from-env: GITHUB_TOKEN
 ```
 
-Then, in your `./ci` dagger module you implement a `Dispatch` function that accepts the source directory, eventTrigger and your configured secrets. In that function you can parse the event that triggered the call using `pocketci`'s helper module:
+Then, in your `./ci` dagger module you have a few alternatives. You can implement a `Dispatch` function that accepts the source directory, eventTrigger and your configured secrets. In that function you can parse the event that triggered the call using `pocketci`'s helper module:
 ```go
 // `ghUsername` and `ghPassword` are automatically mapped by pocketci using what you specify in the `pocketci.yaml`
 func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
@@ -116,7 +118,26 @@ func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *
 }
 ```
 
-You can alternatively parse the `eventTrigger` yourself. It is JSON file with the data contained [here](pocketci/server.go#L21). It will contain some metadata added by `pocketci` and the payload sent by the VCS.
+Or you can create separate functions for each of the events (`OnPullRequest` & `OnCommitPush`) and let `pocketci` take care of calling the corresponding one:
+```go
+func (m *Ci) OnPullRequest(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+	return err
+}
+
+func (m *Ci) OnCommitPush(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	sha, err := dag.Pocketci(eventTrigger).CommitPush().Sha(ctx)
+	if err != nil {
+		return err
+	}
+
+	username, _ := ghUsername.Plaintext(ctx)
+	_, err = m.Publish(ctx, src, sha, username, ghPassword)
+	return err
+}
+```
+
+You can alternatively parse the `eventTrigger` yourself without the use of the `pocketci` module. It is JSON file with the data contained [here](pocketci/server.go#L21). It will contain some metadata added by `pocketci` and the payload sent by the VCS.
 
 ### `Dispatch` interface
 
