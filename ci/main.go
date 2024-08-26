@@ -21,8 +21,8 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, address, userna
 		Publish(ctx, address, dagger.ContainerPublishOpts{})
 }
 
-func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, payload *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-	pocketci := dag.Pocketci(payload)
+func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	pocketci := dag.Pocketci(eventTrigger)
 
 	switch {
 	case pocketci.OnPullRequest() != nil:

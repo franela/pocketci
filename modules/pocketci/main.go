@@ -14,8 +14,8 @@ type Pocketci struct {
 	PullRequestEvent *PullRequestEvent
 }
 
-func New(ctx context.Context, payload *dagger.File) (*Pocketci, error) {
-	e, err := parsePayload(ctx, payload)
+func New(ctx context.Context, eventTrigger *dagger.File) (*Pocketci, error) {
+	e, err := parseEventTrigger(ctx, eventTrigger)
 	if err != nil {
 		return nil, err
 	}
@@ -47,8 +47,8 @@ func (m *Pocketci) OnPullRequest() *PullRequestEvent {
 	return m.PullRequestEvent
 }
 
-func parsePayload(ctx context.Context, payload *dagger.File) (*event, error) {
-	contents, err := payload.Contents(ctx)
+func parseEventTrigger(ctx context.Context, eventTrigger *dagger.File) (*event, error) {
+	contents, err := eventTrigger.Contents(ctx)
 	if err != nil {
 		return nil, err
 	}

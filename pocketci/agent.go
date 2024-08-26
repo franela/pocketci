@@ -175,7 +175,7 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 		WithWorkdir("/"+event.RepositoryName).
 		WithNewFile("/payload.json", string(payload)).
 		With(func(c *dagger.Container) *dagger.Container {
-			args := []string{"call", "-m", cfg.ModulePath, "--progress", "plain", "dispatch", "--src", ".", "--payload", "/payload.json"}
+			args := []string{"call", "-m", cfg.ModulePath, "--progress", "plain", "dispatch", "--src", ".", "--event-trigger", "/payload.json"}
 			for _, secret := range cfg.Secrets {
 				c = c.WithSecretVariable(secret.FromEnv, agent.dag.SetSecret(secret.Name, os.Getenv(secret.FromEnv)))
 				args = append(args, fmt.Sprintf("--%s", strcase.ToKebab(secret.Name)))
