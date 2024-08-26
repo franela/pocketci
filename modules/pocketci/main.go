@@ -11,9 +11,17 @@ import (
 )
 
 type Pocketci struct {
-	PullRequestEvent *PullRequestEvent
+	EventType        EventType
+	PullRequestEvent *PullRequest
 	CommitPush       *CommitPush
 }
+
+type EventType string
+
+const (
+	PullRequestEvent EventType = "pull_request"
+	CommitPushEvent  EventType = "push"
+)
 
 func New(ctx context.Context, eventTrigger *dagger.File) (*Pocketci, error) {
 	e, err := parseEventTrigger(ctx, eventTrigger)
@@ -38,21 +46,13 @@ func New(ctx context.Context, eventTrigger *dagger.File) (*Pocketci, error) {
 			Changes:   e.Changes,
 			EventType: e.EventType,
 		}
-		return &Pocketci{PullRequestEvent: pr}, nil
+		return &Pocketci{EventType: EventType(e.EventType), PullRequestEvent: pr}, nil
 	case *github.PushEvent:
 		commitPush := fromGithubPushEvent(event)
-		return &Pocketci{CommitPush: commitPush}, nil
+		return &Pocketci{EventType: EventType(e.EventType), CommitPush: commitPush}, nil
 	default:
 		return nil, fmt.Errorf("event of type %T is not yet supported", event)
 	}
-}
-
-func (m *Pocketci) OnPullRequest() *PullRequestEvent {
-	return m.PullRequestEvent
-}
-
-func (m *Pocketci) OnCommitPush() *CommitPush {
-	return m.CommitPush
 }
 
 func parseEventTrigger(ctx context.Context, eventTrigger *dagger.File) (*event, error) {

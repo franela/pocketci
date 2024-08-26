@@ -23,12 +23,16 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, address, userna
 
 func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
 	ci := dag.Pocketci(eventTrigger)
+	event, err := ci.EventType(ctx)
+	if err != nil {
+		return err
+	}
 
-	switch {
-	case ci.OnPullRequest() != nil:
+	switch event {
+	case dagger.PullRequest:
 		_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
 		return err
-	case ci.OnCommitPush() != nil:
+	case dagger.Push:
 		sha, err := ci.CommitPush().HeadCommit().Sha(ctx)
 		if err != nil {
 			return err

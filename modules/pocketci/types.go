@@ -25,8 +25,8 @@ type event struct {
 	Payload   json.RawMessage `json:"payload"`
 }
 
-func fromGithubPullRequest(e *github.PullRequestEvent) *PullRequestEvent {
-	pr := &PullRequestEvent{}
+func fromGithubPullRequest(e *github.PullRequestEvent) *PullRequest {
+	pr := &PullRequest{}
 	pr.Action = *e.Action
 	pr.Number = *e.Number
 
@@ -44,7 +44,7 @@ func fromGithubPullRequest(e *github.PullRequestEvent) *PullRequestEvent {
 		mergedAt = e.PullRequest.MergedAt.String()
 	}
 
-	pr.PullRequest = PullRequest{
+	pr.PullRequest = PullRequestSpec{
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
 		ClosedAt:  closedAt,
@@ -130,7 +130,7 @@ func fromGithubPullRequest(e *github.PullRequestEvent) *PullRequestEvent {
 	return pr
 }
 
-type PullRequestEvent struct {
+type PullRequest struct {
 	Event
 
 	// Action is the action that was performed. Possible values are:
@@ -142,13 +142,13 @@ type PullRequestEvent struct {
 	// don't include pull request events with the "synchronize" action.
 	Action      string
 	Number      int
-	PullRequest PullRequest
+	PullRequest PullRequestSpec
 
 	Repo  Repository
 	Label string
 }
 
-type PullRequest struct {
+type PullRequestSpec struct {
 	Number         int
 	State          string
 	Locked         bool
