@@ -72,19 +72,9 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 		baseRef = *ghEvent.PullRequest.Base.Ref
 		baseSha = *ghEvent.PullRequest.Base.SHA
 	case *github.PushEvent:
-		// NOTE: If users have `PushEvent` enabled in their lists of webhooks
-		// then we receive duplicated events every time a commit is pushed to
-		// a pull request. To simplify how pocketci works we need to choose
-		// to handle only one of those events when this duplication happens.
-		// The easiest way of doing this is to ignore all push events that are not
-		// on the typical main branches (develop, main, master, trunk). This will
-		// prevent users from creating workflows that are triggered based on commits
-		// that happen against arbitrary branches. There are workarounds we can apply
-		// but they will complicate the implementation and I would rather wait
-		// until people request the feature
 		gitSha = *ghEvent.After
 		repository = *ghEvent.Repo.FullName
-		ref = *ghEvent.Ref
+		ref = strings.Trim(*ghEvent.Ref, "refs/heads/")
 	}
 
 	fullRepo := strings.Split(repository, "/")

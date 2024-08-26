@@ -115,18 +115,20 @@ Then, in your `./ci` dagger module you implement a `Dispatch` function that acce
 ```go
 // `ghUsername` and `ghPassword` are automatically mapped by pocketci using what you specify in the `pocketci.yaml`
 func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-	pocketci := dag.Pocketci(eventTrigger)
+	ci := dag.Pocketci(eventTrigger)
 
 	switch {
-	case pocketci.OnPullRequest() != nil:
+	case ci.OnPullRequest() != nil:
 		_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
 		return err
-	case pocketci.OnCommitPush() != nil:
-		sha, err := pocketci.OnCommitPush().SHA()
+	case ci.OnCommitPush() != nil:
+		sha, err := ci.CommitPush().HeadCommit().Sha(ctx)
 		if err != nil {
-		    return err
+			return err
 		}
-		return m.Publish(ctx, src, sha, ghUsername, ghPassword)
+		username, _ := ghUsername.Plaintext(ctx)
+		_, err = m.Publish(ctx, src, "ghcr.io/franela/pocketci:"+sha, username, ghPassword)
+		return err
 	}
 
 	return nil

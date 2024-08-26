@@ -22,11 +22,19 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, address, userna
 }
 
 func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-	pocketci := dag.Pocketci(eventTrigger)
+	ci := dag.Pocketci(eventTrigger)
 
 	switch {
-	case pocketci.OnPullRequest() != nil:
+	case ci.OnPullRequest() != nil:
 		_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+		return err
+	case ci.OnCommitPush() != nil:
+		sha, err := ci.CommitPush().HeadCommit().Sha(ctx)
+		if err != nil {
+			return err
+		}
+		username, _ := ghUsername.Plaintext(ctx)
+		_, err = m.Publish(ctx, src, "ghcr.io/franela/pocketci:"+sha, username, ghPassword)
 		return err
 	}
 

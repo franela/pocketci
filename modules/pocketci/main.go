@@ -12,6 +12,7 @@ import (
 
 type Pocketci struct {
 	PullRequestEvent *PullRequestEvent
+	CommitPush       *CommitPush
 }
 
 func New(ctx context.Context, eventTrigger *dagger.File) (*Pocketci, error) {
@@ -45,6 +46,10 @@ func New(ctx context.Context, eventTrigger *dagger.File) (*Pocketci, error) {
 
 func (m *Pocketci) OnPullRequest() *PullRequestEvent {
 	return m.PullRequestEvent
+}
+
+func (m *Pocketci) OnCommitPush() *CommitPush {
+	return m.CommitPush
 }
 
 func parseEventTrigger(ctx context.Context, eventTrigger *dagger.File) (*event, error) {

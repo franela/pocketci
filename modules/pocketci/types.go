@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/google/go-github/v61/github"
 )
@@ -27,7 +26,6 @@ type event struct {
 }
 
 func fromGithubPullRequest(e *github.PullRequestEvent) *PullRequestEvent {
-	fmt.Printf("%+v\n", *e)
 	pr := &PullRequestEvent{}
 	pr.Action = *e.Action
 	pr.Number = *e.Number
@@ -187,4 +185,94 @@ type User struct {
 	Login    string
 	Name     string
 	UserType string
+}
+
+func fromGithubPushEvent(e *github.PushEvent) *CommitPush {
+	cp := &CommitPush{}
+	cp.Head = *e.Head
+	cp.Ref = *e.Ref
+	cp.Size = *e.Size
+
+	cp.Commits = []*HeadCommit{}
+	for _, cmt := range e.Commits {
+		cp.Commits = append(cp.Commits, &HeadCommit{
+			Message:   *cmt.Message,
+			Author:    fromCommitAuthor(cmt.Author),
+			Distinct:  *cmt.Distinct,
+			SHA:       *cmt.SHA,
+			Timestamp: cmt.Timestamp.String(),
+			Added:     cmt.Added,
+			Removed:   cmt.Removed,
+			Modified:  cmt.Modified,
+		})
+	}
+
+	if e.Repo != nil {
+		repo := Repository{
+			Owner: User{
+				Login:    *e.Repo.Owner.Login,
+				UserType: *e.Repo.Owner.Type,
+			},
+		}
+
+		if e.Repo.Owner.Name != nil {
+			repo.Owner.Name = *e.Repo.Owner.Name
+		}
+		cp.Repo = repo
+	}
+
+	if e.HeadCommit != nil {
+		cp.HeadCommit = &HeadCommit{
+			Message:   *e.HeadCommit.Message,
+			Author:    fromCommitAuthor(e.HeadCommit.Author),
+			Distinct:  *e.HeadCommit.Distinct,
+			SHA:       *e.HeadCommit.SHA,
+			Timestamp: e.HeadCommit.Timestamp.String(),
+			Added:     e.HeadCommit.Added,
+			Removed:   e.HeadCommit.Removed,
+			Modified:  e.HeadCommit.Modified,
+		}
+	}
+
+	if e.Pusher != nil {
+		cp.Pusher = fromCommitAuthor(e.Pusher)
+	}
+
+	return cp
+}
+
+type CommitPush struct {
+	Head    string
+	Ref     string
+	Size    int
+	Commits []*HeadCommit
+
+	Repo       Repository
+	HeadCommit *HeadCommit
+	Pusher     *CommitAuthor
+}
+
+type HeadCommit struct {
+	Message   string
+	Author    *CommitAuthor
+	Distinct  bool
+	SHA       string
+	Timestamp string
+	Added     []string
+	Removed   []string
+	Modified  []string
+}
+
+type CommitAuthor struct {
+	Date  string
+	Name  string
+	Email string
+}
+
+func fromCommitAuthor(author *github.CommitAuthor) *CommitAuthor {
+	return &CommitAuthor{
+		Date:  author.Date.String(),
+		Name:  *author.Name,
+		Email: *author.Email,
+	}
 }
