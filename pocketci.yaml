@@ -1,0 +1,11 @@
+module-path: ./ci
+events:
+  - pull_request
+  - commit
+paths:
+  - "**/**.go"
+secrets:
+  - name: ghUsername
+    from-env: GITHUB_USERNAME
+  - name: ghPassword
+    from-env: GITHUB_TOKEN
