@@ -15,6 +15,11 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, tag, username s
 }
 
 func (m *Ci) OnPullRequest(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+	return err
+}
+
+func (m *Ci) OnCommitPush(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
 	sha, err := dag.Pocketci(eventTrigger).CommitPush().Sha(ctx)
 	if err != nil {
 		return err
@@ -22,11 +27,6 @@ func (m *Ci) OnPullRequest(ctx context.Context, src *dagger.Directory, eventTrig
 
 	username, _ := ghUsername.Plaintext(ctx)
 	_, err = m.Publish(ctx, src, sha, username, ghPassword)
-	return err
-}
-
-func (m *Ci) OnCommitPush(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
 	return err
 }
 
