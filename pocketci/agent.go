@@ -26,16 +26,40 @@ var (
 
 const DaggerVersion = "0.12.5"
 
+type Event struct {
+	EventType      string   `json:"event_type"`
+	Changes        []string `json:"changes"`
+	RepositoryName string   `json:"repo_name"`
+
+	ContextVariables map[string]string `json:"-"`
+	RepoContents     *dagger.Directory `json:"-"`
+	Ref              string            `json:"-"`
+	BaseRef          string            `json:"-"`
+
+	// Payload is the payload of the webhook in JSON format.
+	Payload json.RawMessage `json:"payload"`
+}
+
+type GithubEvent struct {
+	EventType string
+	Payload   json.RawMessage `json:"payload"`
+}
+
 type Secret struct {
 	Name    string `yaml:"name"`
 	FromEnv string `yaml:"from-env"`
 }
 
 type Spec struct {
-	ModulePath string   `yaml:"module-path"`
-	Events     []string `yaml:"events"`
-	Paths      []string `yaml:"paths"`
-	Secrets    []Secret `yaml:"secrets"`
+	ModulePath   string       `yaml:"module-path"`
+	EventTrigger EventTrigger `yaml:"events"`
+	Paths        []string     `yaml:"paths"`
+	Secrets      []Secret     `yaml:"secrets"`
+}
+
+type EventTrigger struct {
+	PullRequest []string `json:"pull_request"`
+	Push        []string `json:"push"`
 }
 
 type Agent struct {
@@ -148,7 +172,37 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 		RepoContents:     dir,
 		ContextVariables: variables,
 		Payload:          event.Payload,
+		BaseRef:          baseRef,
+		Ref:              ref,
 	}, nil
+}
+
+func shouldHandle(cfg *Spec, event *Event) bool {
+	// we only continue if both the event type and path pattern match
+	if event.EventType != "pull_request" && event.EventType != "push" {
+		slog.Info(fmt.Sprintf("event %s does not match any of pull_request,push", event.EventType), slog.String("event_type", event.EventType))
+		return false
+	}
+
+	if len(cfg.Paths) != 0 && !Match(event.Changes, cfg.Paths...) {
+		slog.Info(fmt.Sprintf("changes do not match any of the specified paths: %+v", cfg.Paths), slog.String("event_type", event.EventType))
+		return false
+	}
+
+	switch event.EventType {
+	case "pull_request":
+		if len(cfg.EventTrigger.PullRequest) > 0 && !slices.Contains(cfg.EventTrigger.PullRequest, event.BaseRef) {
+			slog.Info("base ref is not in the allow list", slog.String("event_type", event.EventType), slog.String("base_ref", event.BaseRef))
+			return false
+		}
+	case "push":
+		if len(cfg.EventTrigger.Push) > 0 && !slices.Contains(cfg.EventTrigger.Push, event.Ref) {
+			slog.Info("ref is not in the allow list", slog.String("event_type", event.EventType), slog.String("ref", event.Ref))
+			return false
+		}
+	}
+
+	return true
 }
 
 func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEvent *GithubEvent) error {
@@ -164,13 +218,7 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 		return fmt.Errorf("failed to parse `pocketci.yaml`: %w", err)
 	}
 
-	// we only continue if both the event type and path pattern match
-	if !slices.Contains(cfg.Events, event.EventType) {
-		slog.Info(fmt.Sprintf("event %s does not match any of %+v", event.EventType, cfg.Events))
-		return nil
-	}
-	if len(cfg.Paths) != 0 && !Match(event.Changes, cfg.Paths...) {
-		slog.Info(fmt.Sprintf("changes do not match any of the specified paths: %+v", cfg.Paths))
+	if !shouldHandle(cfg, event) {
 		return nil
 	}
 

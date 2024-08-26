@@ -1,7 +1,9 @@
 module-path: ./ci
 events:
-  - pull_request
-  - push
+  pull_request:
+    - main
+  push:
+    - main
 paths:
   - "**/**.go"
 secrets:
