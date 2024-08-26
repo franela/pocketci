@@ -2,8 +2,7 @@
 
 **This is very much a work in progress, expect things to be rough and potentially break!**
 
-
-`pocketci` is a trully portable CI engine. It builds on top of [dagger](https://dagger.io), adding functionalities commonly needed when building CI pipelines for your projects. 
+`pocketci` is a portable CI platform that builds on the shoulds of [dagger](https://dagger.io), adding functionalities commonly needed when building CI pipelines for your projects. 
 
 > [!NOTE]
 > At the moment `GitHub` is the only supported VCS
