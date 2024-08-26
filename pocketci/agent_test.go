@@ -23,6 +23,64 @@ var (
 	ghCommitPush []byte
 )
 
+func TestShouldHandle(t *testing.T) {
+	cases := []struct {
+		name     string
+		cfg      *Spec
+		event    *Event
+		expected bool
+	}{
+		{
+			name:     "event does not exist",
+			cfg:      &Spec{},
+			event:    &Event{EventType: "nope"},
+			expected: false,
+		},
+		{
+			name:     "match pull_request",
+			cfg:      &Spec{EventTrigger: EventTrigger{PullRequest: []string{}}},
+			event:    &Event{EventType: "pull_request"},
+			expected: true,
+		},
+		{
+			name:     "match push",
+			cfg:      &Spec{EventTrigger: EventTrigger{Push: []string{}}},
+			event:    &Event{EventType: "push"},
+			expected: true,
+		},
+		{
+			name:     "match files",
+			cfg:      &Spec{Paths: []string{"**/**.go"}},
+			event:    &Event{EventType: "push", Changes: []string{"main.go"}},
+			expected: true,
+		},
+		{
+			name:     "does not match pull_request",
+			cfg:      &Spec{EventTrigger: EventTrigger{PullRequest: []string{"main"}}},
+			event:    &Event{EventType: "pull_request", BaseRef: "some"},
+			expected: false,
+		},
+		{
+			name:     "does not match push",
+			cfg:      &Spec{EventTrigger: EventTrigger{Push: []string{"main"}}},
+			event:    &Event{EventType: "push", Ref: "some"},
+			expected: false,
+		},
+		{
+			name:     "does not match files",
+			cfg:      &Spec{Paths: []string{"**/**.go"}},
+			event:    &Event{EventType: "push", Changes: []string{"README.md"}},
+			expected: false,
+		},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, shouldHandle(test.cfg, test.event), test.expected)
+		})
+	}
+}
+
 func TestAgent_GithubClone(t *testing.T) {
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))

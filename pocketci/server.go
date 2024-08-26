@@ -18,23 +18,6 @@ import (
 
 const GithubEventTypeHeader = "X-Github-Event"
 
-type Event struct {
-	EventType      string            `json:"event_type"`
-	Changes        []string          `json:"changes"`
-	RepoContents   *dagger.Directory `json:"-"`
-	RepositoryName string            `json:"repo_name"`
-
-	ContextVariables map[string]string `json:"context"`
-
-	// Payload is the payload of the webhook in JSON format.
-	Payload json.RawMessage `json:"payload"`
-}
-
-type GithubEvent struct {
-	EventType string
-	Payload   json.RawMessage `json:"payload"`
-}
-
 type Server struct {
 	agent *Agent
 
