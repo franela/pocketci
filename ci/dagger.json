@@ -4,7 +4,7 @@
   "dependencies": [
     {
       "name": "pocketci",
-      "source": "../modules/pocketci"
+      "source": "github.com/franela/pocketci/modules/pocketci@f184045d17421024adf4b47b3e90e51e3962332d"
     }
   ],
   "source": ".",

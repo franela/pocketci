@@ -14,7 +14,23 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, tag, username s
 		Publish(ctx, "ghcr.io/franela/pocketci:"+tag)
 }
 
-func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+func (m *Ci) OnPullRequest(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	sha, err := dag.Pocketci(eventTrigger).CommitPush().Sha(ctx)
+	if err != nil {
+		return err
+	}
+
+	username, _ := ghUsername.Plaintext(ctx)
+	_, err = m.Publish(ctx, src, sha, username, ghPassword)
+	return err
+}
+
+func (m *Ci) OnCommitPush(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+	return err
+}
+
+/*func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
 	ci := dag.Pocketci(eventTrigger)
 	event, err := ci.EventType(ctx)
 	if err != nil {
@@ -36,7 +52,7 @@ func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *
 	}
 
 	return nil
-}
+}*/
 
 func (m *Ci) Test(ctx context.Context, src *dagger.Directory, ghUsername, ghPassword *dagger.Secret) *dagger.Container {
 	return m.base(src).
