@@ -30,18 +30,21 @@ func New(ctx context.Context, eventTrigger *dagger.File) (*Pocketci, error) {
 		return nil, err
 	}
 
-	pullEvent, ok := ghEvent.(*github.PullRequestEvent)
-	if !ok {
-		return nil, fmt.Errorf("got an event of type %T instead of a PullRequestEvent", ghEvent)
+	switch event := ghEvent.(type) {
+	case *github.PullRequestEvent:
+		pr := fromGithubPullRequest(event)
+		pr.Event = Event{
+			RepoName:  e.RepoName,
+			Changes:   e.Changes,
+			EventType: e.EventType,
+		}
+		return &Pocketci{PullRequestEvent: pr}, nil
+	case *github.PushEvent:
+		commitPush := fromGithubPushEvent(event)
+		return &Pocketci{CommitPush: commitPush}, nil
+	default:
+		return nil, fmt.Errorf("event of type %T is not yet supported", event)
 	}
-
-	pr := fromGithubPullRequest(pullEvent)
-	pr.Event = Event{
-		RepoName:  e.RepoName,
-		Changes:   e.Changes,
-		EventType: e.EventType,
-	}
-	return &Pocketci{PullRequestEvent: pr}, nil
 }
 
 func (m *Pocketci) OnPullRequest() *PullRequestEvent {

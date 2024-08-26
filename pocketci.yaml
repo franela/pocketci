@@ -1,7 +1,7 @@
 module-path: ./ci
 events:
   - pull_request
-  - commit
+  - push
 paths:
   - "**/**.go"
 secrets:
