@@ -24,6 +24,8 @@ type Event struct {
 	RepoContents   *dagger.Directory `json:"-"`
 	RepositoryName string            `json:"repo_name"`
 
+	ContextVariables map[string]string `json:"context"`
+
 	// Payload is the payload of the webhook in JSON format.
 	Payload json.RawMessage `json:"payload"`
 }
