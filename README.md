@@ -2,107 +2,154 @@
 
 **This is very much a work in progress, expect things to be rough and potentially break!**
 
-`pocketci` is the first small and trully portable CI engine. This project leverages the Dagger SDK to wrap [webhook](https://github.com/adnanh/webhook) with ability to automatically clone repositories. It allows you to run dagger commands (and any other kind of commands) in one of two ways:
 
-- Portable CI runner: By starting the service as is you can hook it to a repository through webhooks and run commands in the context of your repo (like doing a `checkout` on github actions first!)
-- Webhook server: By providing a `hooks.yaml` on startup you can leverage Dagger modules to hook them into specific webhooks (like a Slack Webhook)
+`pocketci` is a trully portable CI engine. It builds on top of [dagger](https://dagger.io), adding functionalities commonly needed when building CI pipelines for your projects. 
 
-### Next steps
+> [!NOTE]
+> At the moment `GitHub` is the only supported VCS
 
-Using [webhook](https://github.com/adnanh/webhook) allowed us to quickly test the idea of a CI engine that by leveraging Dagger in a native way becomes truly portable. The use of this project means we are limited by the definitions of the `hooks.yaml` format which, while being very useful, does not integrate in a native way with Dagger. We want pocketci to integrate seamlessly with Dagger and Dagger modules. You can join the discussion on how to build that [here](https://github.com/franela/pocketci/issues/2).
+In a nutshell, `pocketci` moves the dispatching logic from your workflow YAMLs to your Dagger modules. You wire it to your VCS of choice via [Webhooks](https://docs.github.com/en/webhooks/about-webhooks) and it takes care of calling the module in charge of orchestrating your CI.
 
-## Portable CI runner
 
-1. Start the service: `dagger call -m github.com/franela/pocketci/module@pocketci-agent serve --src https://github.com/franela/pocketci#pocketci-agent up`
-2. Expose it to the internet (you can use the likes of `ngrok` to expose local endpoints)
-3. Connect your repository by setting up a webhook in your VCS (github is the only supported at the moment)
-4. Write a hooks.yaml file that triggers a dagger command on every commit to the main branch. For example on a github repo:
+## Getting started
 
+> [!CAUTION]
+> This project is still under active development and brainstorming, things can drastically change and break
+
+`pocketci` is a golang application that wraps the dagger engine with some functionalities necessary for running your CI infrastructure. Running it locally requires three environment variables:
+```terminal
+# set the git credentials used by pocketci to clone the repositories
+export GITHUB_USERNAME=<YOUR GITHUB USERNAME>
+export GITHUB_TOKEN=<YOUR PAT OR FINE GRAINED TOKEN>
+export X_HUB_SIGNATURE=<SECRET SIGNATURE CONFIGURED FOR WEBHOOKS>
+```
+
+With that configured you can then simply:
+```sh
+go run ./cmd/agent
+```
+
+### Guide
+
+At the moment `pocketci` is building `pocketci`. This means we can look at how this happens to understand how to use it. This is a traditional Go application that needs to be built, tested & released. Our workflow requirements are:
+- On every `commit` pushed to `main` publish an image with the commit sha to ghcr
+- On every `pull_request` run the tests
+
+With `GitHub` actions we would build one workflow for each of the triggers and make the corresponding `dagger call`:
 ```yaml
-- id: git-push
-  execute-command: "/bin/dagger"
-  include-command-output-in-response: true
-  command-working-directory: "/hooks-test"
-  pass-arguments-to-command:
-  - source: string
-    name: call
-  - source: string
-    name: container-echo
-  - source: string
-    name: "--string-arg"
-  - source: payload
-    name: commits.0.message
-  trigger-rule:
-    and:
-    - match:
-        type: payload-hmac-sha1
-        secret: itsasecret
-        parameter:
-          source: header
-          name: X-Hub-Signature
-    - match:
-        type: value
-        value: refs/heads/main
-        parameter:
-          source: payload
-          name: ref
+-- .github/workflows/release.yml
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  build-and-push-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build and push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dagger call -m ./ci publish --src . --tag {{ github.ref }}
+
+-- .github/workflows/publish-main.yml
+name: Publish @ main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push-main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and publish
+        run: |
+          dagger call -m ./ci publish --src . --tag {{ github.sha }}
+
+-- .github/workflows/check.yml
+name: Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+
+run: |
+          dagger call -m ./ci test --src .
 ```
 
-The working directory of your command will contain the entire contents of your repository at the specified `ref` so you could run commands from your own dagger module.
-
-By default it proxies requests in a synchronous way, meaning that the execution of your commands will block the incoming requests. This could be a problem if you are exposing this to a provider such as a Github that has a [timeout of 10 seconds](https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/troubleshooting-webhooks#timed-out). To force every request to be processed in an async way, you can pass the flag `--proxy-async`.
-
-## Webhook server
-
-Write a `hooks.yaml`. For example one that runs a dagger call on every single request:
-
+With `pocketci` you instead take care of interpreting the `triggers` defined above within your module. First you define the location of your dispatcher module, what secret parameters it needs and which `events` trigger a call to it:
 ```yaml
-- id: webhook
-  execute-command: dagger
-  include-command-output-in-response: true
-  response-headers:
-    - name: "Access-Control-Allow-Origin"
-      value: "*"
-  pass-arguments-to-command:
-    - source: "string"
-      value: "--debug"
-    - source: "string"
-      value: "--progress=plain"
-    - source: "string"
-      value: "call"
-    - source: "string"
-      value: "-m"
-    - source: "string"
-      value: "github.com/shykes/daggerverse/hello"
-    - source: "string"
-      value: "Hello World!"
+module-path: ./ci
+events:
+  pull_request: 
+  - main
+  tags: 
+  - 'v[0-9]+.[0-9]+.[0-9]+'
+  commits:
+  - main
+paths:
+  - "**/**.go"
+secrets:
+  - name: ghUsername
+    from-env: GITHUB_USERNAME
+  - name: ghPassword
+    from-env: GITHUB_TOKEN
 ```
 
-Run it with:
+Then, in your `./ci` dagger module you implement a `Dispatch` function that accepts the source directory, eventTrigger and your configured secrets. In that function you can parse the event that triggered the call using `pocketci`'s helper module:
+```go
+// `ghUsername` and `ghPassword` are automatically mapped by pocketci using what you specify in the `pocketci.yaml`
+func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	pocketci := dag.Pocketci(eventTrigger)
 
-```console
-dagger call \
- -m github.com/franela/pocketci/module@pocketci-agent \
- serve \
-  --src https://github.com/franela/pocketci#pocketci-agent \
-  --hooks hooks.yaml \
- up
-  ```
+	switch {
+	case pocketci.OnPullRequest() != nil:
+		_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+		return err
+	case pocketci.OnCommitPush() != nil:
+		sha, err := pocketci.OnCommitPush().SHA()
+		if err != nil {
+		    return err
+		}
+		return m.Publish(ctx, src, sha, ghUsername, ghPassword)
+	}
 
-  You can validate that your webhook is triggered: `curl http://localhost:8080/hooks/webhook`. You should see a response such as:
-
+	return nil
+}
 ```
-1: load call
-1: loading module
-1: loading module [6.57s]
-1: loading objects
-1: loading objects [3.02s]
-1: traversing arguments
-1: traversing arguments [0.00s]
-1: load call DONE
 
-2: dagger call message
-DEBUG: executing query="query{hello{message}}"
-Hello, World!
-2: dagger call message DONE
-```
+You can alternatively parse the `eventTrigger` yourself. It is JSON file with the data contained [here](pocketci/server.go#L21). It will contain some metadata added by `pocketci` and the payload sent by the VCS.
+
+### `Dispatch` interface
+
+Pocketci uses a loosely defined interface for calling your module. This interface contains a single method called `Dispatch` that receives:
+- `src`: the Directory containing the repository of the webhook
+- `eventTrigger`: a file created by `pocketci` with metadata and the raw payload sent by the VCS
+- an optional list of secrets configured by the user mapped to environment variables available in the context of `pocketci`'s agent.
+
+This interface is simple and provides the most flexibility. However for certain cases it can be quite verbose. In pipelines you traditionally have separate workflow files for separate kind of triggers. We could take a similar approach, were we have a top level function for each trigger `pocketci` supports. That way we could have functions such as `OnPullRequest`, `OnCommitPush`, etc and make the call to the one that matches the event.
+
+### `pocketci` module
+
+The purpose of this module is to be a language agnostic way of interpreting the events that trigger the dagger call. At the moment this module is very basic and very specific to `GitHub`. But I believe it has the potential to hide the VCS from the implementation and help us achieve a trully portable CI experience. If this module provides the constructs for every event that could trigger dagger calls in a compatible way (but still providing the underlying raw data for corner cases) then users could easily migrate across VCS.
+
+We can think of this module as the entrypoint for standardizing events in general. Not just VCS stuff.
+
+### Multiple `pocketci.yaml` per repository?
+
+At the moment `pocketci` only supports one specification per repository. And each spec supports only a single module. This is a limitation that we plan to change. If you have a mono-repo with many applications, using `pocketci` today would mean that a single `Dispatch` would be in charge of orchestrating the calls for all applications. This in turn makes every secret of every application available no matter which application is the one triggering the actual change and it will likely make for a very unmaintainable dagger function. We plan to change this but are unsure when, if you are interested you can open an issue to let us know.
