@@ -12,10 +12,18 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-//go:embed test-data/gh-pr-webhook.json
-var ghPrWebhook []byte
+var (
+	//go:embed test-data/gh-pr-opened.json
+	ghPrOpen []byte
 
-func TestAgent_GithubCloneFromPullRequest(t *testing.T) {
+	//go:embed test-data/gh-pr-sync.json
+	ghPrSync []byte
+
+	//go:embed test-data/gh-commit-push.json
+	ghCommitPush []byte
+)
+
+func TestAgent_GithubClone(t *testing.T) {
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -23,15 +31,28 @@ func TestAgent_GithubCloneFromPullRequest(t *testing.T) {
 	}
 
 	agent := NewAgent(client)
-
 	ghSecret := agent.CreateGithubSecret(os.Getenv("GH_USERNAME"), os.Getenv("GH_PASSWORD"))
 
-	event, err := agent.GithubClone(ctx, ghSecret, &GithubEvent{
-		EventType: "pull_request",
-		Payload:   json.RawMessage(ghPrWebhook),
-	})
-	assert.NilError(t, err)
-	assert.Equal(t, event.RepoContents != nil, true)
+	cases := []struct {
+		name      string
+		payload   json.RawMessage
+		eventType string
+	}{
+		{"pr opened", ghPrOpen, "pull_request"},
+		{"pr synced", ghPrSync, "pull_request"},
+		{"commit pushed", ghCommitPush, "push"},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			event, err := agent.GithubClone(ctx, ghSecret, &GithubEvent{
+				EventType: test.eventType,
+				Payload:   test.payload,
+			})
+			assert.NilError(t, err)
+			assert.Equal(t, event.RepoContents != nil, true)
+		})
+	}
 }
 
 func TestParsePocketciConfig(t *testing.T) {

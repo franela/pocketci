@@ -37,25 +37,6 @@ At the moment `pocketci` is building `pocketci`. This means we can look at how t
 
 With `GitHub` actions we would build one workflow for each of the triggers and make the corresponding `dagger call`:
 ```yaml
--- .github/workflows/release.yml
-name: Publish Release
-
-on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-
-jobs:
-  build-and-push-release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Build and push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          dagger call -m ./ci publish --src . --tag {{ github.ref }}
-
 -- .github/workflows/publish-main.yml
 name: Publish @ main
 
@@ -96,12 +77,8 @@ With `pocketci` you instead take care of interpreting the `triggers` defined abo
 ```yaml
 module-path: ./ci
 events:
-  pull_request: 
-  - main
-  tags: 
-  - 'v[0-9]+.[0-9]+.[0-9]+'
-  commits:
-  - main
+  - pull_request
+  - push
 paths:
   - "**/**.go"
 secrets:

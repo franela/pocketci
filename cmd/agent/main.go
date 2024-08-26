@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,11 +12,17 @@ import (
 	"github.com/franela/pocketci/pocketci"
 )
 
+var verbose = flag.Bool("verbose", false, "whether to enable verbose output")
+
 func main() {
 	flag.Parse()
 
 	ctx := context.Background()
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	out := io.Discard
+	if *verbose {
+		out = os.Stderr
+	}
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(out))
 	if err != nil {
 		slog.Error("failed to connect to dagger", slog.String("error", err.Error()))
 	}

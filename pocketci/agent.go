@@ -68,13 +68,15 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 	case *github.PullRequestEvent:
 		gitSha = *ghEvent.PullRequest.Head.SHA
 		repository = *ghEvent.Repo.FullName
-		ref = *ghEvent.PullRequest.Head.Ref
-		baseRef = *ghEvent.PullRequest.Base.Ref
+		ref = strings.TrimPrefix(*ghEvent.PullRequest.Head.Ref, "refs/heads/")
+		baseRef = strings.TrimPrefix(*ghEvent.PullRequest.Base.Ref, "refs/heads/")
 		baseSha = *ghEvent.PullRequest.Base.SHA
 	case *github.PushEvent:
 		gitSha = *ghEvent.After
 		repository = *ghEvent.Repo.FullName
-		ref = strings.Trim(*ghEvent.Ref, "refs/heads/")
+		ref = strings.TrimPrefix(*ghEvent.Ref, "refs/heads/")
+	default:
+		return nil, fmt.Errorf("received event of type %T that is not yet supported", ghEvent)
 	}
 
 	fullRepo := strings.Split(repository, "/")
@@ -148,7 +150,7 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 		slog.Info(fmt.Sprintf("event %s does not match any of %+v", event.EventType, cfg.Events))
 		return nil
 	}
-	if !Match(event.Changes, cfg.Paths...) {
+	if len(cfg.Paths) != 0 && !Match(event.Changes, cfg.Paths...) {
 		slog.Info(fmt.Sprintf("changes do not match any of the specified paths: %+v", cfg.Paths))
 		return nil
 	}

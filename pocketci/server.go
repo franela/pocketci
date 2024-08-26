@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -40,6 +40,7 @@ type Server struct {
 	githubSignature string
 }
 
+// TODO: move away into a proper `Config` structure for the server
 type ServerOptions struct {
 	GithubUsername  string
 	GithubPassword  string
@@ -84,7 +85,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("failed to get request body: %s", err.Error())
+			slog.Debug("failed to get request body", slog.String("error", err.Error()))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -97,7 +98,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			ctx := context.Background()
 			if err := s.agent.HandleGithub(ctx, s.githubSecret, ghEvent); err != nil {
-				log.Printf("failed to handle github request: %s\n", err)
+				slog.Error("failed to handle github request", slog.String("error", err.Error()))
 			}
 		}()
 
