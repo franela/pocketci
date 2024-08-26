@@ -189,14 +189,11 @@ type User struct {
 
 func fromGithubPushEvent(e *github.PushEvent) *CommitPush {
 	cp := &CommitPush{}
-	if e.Head != nil {
-		cp.Head = *e.Head
-	}
 	if e.Ref != nil {
 		cp.Ref = *e.Ref
 	}
-	if e.Size != nil {
-		cp.Size = *e.Size
+	if e.After != nil {
+		cp.SHA = *e.After
 	}
 
 	cp.Commits = []*HeadCommit{}
@@ -210,8 +207,8 @@ func fromGithubPushEvent(e *github.PushEvent) *CommitPush {
 		if cmt.Message != nil {
 			hc.Message = *cmt.Message
 		}
-		if cmt.SHA != nil {
-			hc.SHA = *cmt.SHA
+		if cmt.ID != nil {
+			hc.SHA = *cmt.ID
 		}
 		if cmt.Timestamp != nil {
 			hc.Timestamp = cmt.Timestamp.String()
@@ -243,8 +240,8 @@ func fromGithubPushEvent(e *github.PushEvent) *CommitPush {
 		if e.HeadCommit.Message != nil {
 			cp.HeadCommit.Message = *e.HeadCommit.Message
 		}
-		if e.HeadCommit.SHA != nil {
-			cp.HeadCommit.SHA = *e.HeadCommit.SHA
+		if e.HeadCommit.ID != nil {
+			cp.HeadCommit.SHA = *e.HeadCommit.ID
 		}
 		if e.HeadCommit.Timestamp != nil {
 			cp.HeadCommit.Timestamp = e.HeadCommit.Timestamp.String()
@@ -259,9 +256,8 @@ func fromGithubPushEvent(e *github.PushEvent) *CommitPush {
 }
 
 type CommitPush struct {
-	Head    string
 	Ref     string
-	Size    int
+	SHA     string
 	Commits []*HeadCommit
 
 	Repo       Repository
