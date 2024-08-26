@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,6 +64,7 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 		ref        string
 		baseRef    string
 		baseSha    string
+		prNumber   int
 	)
 	switch ghEvent := githubEvent.(type) {
 	case *github.PullRequestEvent:
@@ -71,6 +73,7 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 		ref = strings.TrimPrefix(*ghEvent.PullRequest.Head.Ref, "refs/heads/")
 		baseRef = strings.TrimPrefix(*ghEvent.PullRequest.Base.Ref, "refs/heads/")
 		baseSha = *ghEvent.PullRequest.Base.SHA
+		prNumber = *ghEvent.Number
 	case *github.PushEvent:
 		gitSha = *ghEvent.After
 		repository = *ghEvent.Repo.FullName
@@ -128,12 +131,23 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 
 	slog.Info("computed files changed for repository", slog.String("repository", repository), slog.Int("files_changed", len(filesChanged)))
 
+	variables := map[string]string{
+		"GITHUB_SHA":        gitSha,
+		"GITHUB_ACTIONS":    "true",
+		"GITHUB_EVENT_NAME": event.EventType,
+		"GITHUB_EVENT_PATH": "/raw-payload.json",
+	}
+	if baseRef != "" {
+		variables["GITHUB_REF"] = "refs/pull/" + strconv.Itoa(prNumber) + "/merge"
+	}
+
 	return &Event{
-		EventType:      event.EventType,
-		Changes:        strings.Split(strings.TrimSuffix(filesChanged, "\n"), "\n"),
-		RepositoryName: repo,
-		RepoContents:   dir,
-		Payload:        event.Payload,
+		EventType:        event.EventType,
+		Changes:          strings.Split(strings.TrimSuffix(filesChanged, "\n"), "\n"),
+		RepositoryName:   repo,
+		RepoContents:     dir,
+		ContextVariables: variables,
+		Payload:          event.Payload,
 	}, nil
 }
 
@@ -172,17 +186,23 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 		WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
 		WithDirectory("/"+event.RepositoryName, event.RepoContents).
 		WithWorkdir("/"+event.RepositoryName).
+		WithNewFile("/raw-payload.json", string(ghEvent.Payload)).
 		WithNewFile("/payload.json", string(payload)).
+		WithEnvVariable("CI", "pocketci").
 		With(func(c *dagger.Container) *dagger.Container {
-			args := []string{"call", "-m", cfg.ModulePath, "--progress", "plain", "dispatch", "--src", ".", "--event-trigger", "/payload.json"}
+			// set contextual variables used by the dagger CLI to report labels
+			// to dagger cloud
+			for key, val := range event.ContextVariables {
+				c = c.WithEnvVariable(key, val)
+			}
+
+			script := fmt.Sprintf(`unset TRACEPARENT;unset OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:38015;unset OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:38015/v1/traces;unset OTEL_EXPORTER_OTLP_TRACES_LIVE=1;unset OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:38015/v1/logs;unset OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:38015/v1/metrics; dagger call -m %s --progress plain dispatch --src . --event-trigger /payload.json`, cfg.ModulePath)
 			for _, secret := range cfg.Secrets {
 				c = c.WithSecretVariable(secret.FromEnv, agent.dag.SetSecret(secret.Name, os.Getenv(secret.FromEnv)))
-				args = append(args, fmt.Sprintf("--%s", strcase.ToKebab(secret.Name)))
-				args = append(args, fmt.Sprintf("env:%s", secret.FromEnv))
+				script = fmt.Sprintf("%s --%s env:%s", script, strcase.ToKebab(secret.Name), secret.FromEnv)
 			}
-			return c.WithExec(args, dagger.ContainerWithExecOpts{
+			return c.WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
-				UseEntrypoint:                 true,
 			})
 		}).
 		Stdout(ctx)
@@ -227,6 +247,5 @@ func BaseContainer(c *dagger.Client) *dagger.Container {
 
 func AgentContainer(c *dagger.Client) *dagger.Container {
 	return BaseContainer(c).
-		WithExec([]string{"sh", "-c", fmt.Sprintf(`cd / && DAGGER_VERSION="%s" curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION="%s" sh`, DaggerVersion, DaggerVersion)}).
-		WithEntrypoint([]string{"/bin/dagger"})
+		WithExec([]string{"sh", "-c", fmt.Sprintf(`cd / && DAGGER_VERSION="%s" curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION="%s" sh`, DaggerVersion, DaggerVersion)})
 }
