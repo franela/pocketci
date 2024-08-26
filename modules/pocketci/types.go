@@ -273,9 +273,15 @@ type CommitAuthor struct {
 }
 
 func fromCommitAuthor(author *github.CommitAuthor) *CommitAuthor {
-	return &CommitAuthor{
-		Date:  author.Date.String(),
-		Name:  *author.Name,
-		Email: *author.Email,
+	ca := &CommitAuthor{}
+	if author.Date != nil {
+		ca.Date = author.Date.String()
 	}
+	if author.Name != nil {
+		ca.Name = *author.Name
+	}
+	if author.Email != nil {
+		ca.Email = *author.Email
+	}
+	return ca
 }
