@@ -86,6 +86,7 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithMountedSecret("/root/.netrc", netrc)
 
+	slog.Info("cloning repository", slog.String("repository", repository), slog.String("ref", ref), slog.String("commit_sha", gitSha))
 	// NOTE: it is important that we check out the repository with at least some
 	// history. We need at least two commits (or just one if its the initial commit)
 	// in order to compute the list of changes of the latest commit. We use
@@ -125,6 +126,8 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 		return nil, err
 	}
 
+	slog.Info("computed files changed for repository", slog.String("repository", repository), slog.Int("files_changed", len(filesChanged)))
+
 	return &Event{
 		EventType:      event.EventType,
 		Changes:        strings.Split(strings.TrimSuffix(filesChanged, "\n"), "\n"),
@@ -135,6 +138,8 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 }
 
 func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEvent *GithubEvent) error {
+	slog.Info("received event from GitHub", slog.String("event_type", ghEvent.EventType))
+
 	event, err := agent.GithubClone(ctx, netrc, ghEvent)
 	if err != nil {
 		return err
@@ -159,6 +164,8 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 	if err != nil {
 		return err
 	}
+
+	slog.Info("launching pocketci agent container dispatch call", slog.String("repository", event.RepositoryName), slog.String("event_type", ghEvent.EventType))
 
 	stdout, err := AgentContainer(agent.dag).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
