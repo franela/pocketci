@@ -201,15 +201,22 @@ func fromGithubPushEvent(e *github.PushEvent) *CommitPush {
 
 	cp.Commits = []*HeadCommit{}
 	for _, cmt := range e.Commits {
-		cp.Commits = append(cp.Commits, &HeadCommit{
-			Message:   *cmt.Message,
-			Author:    fromCommitAuthor(cmt.Author),
-			SHA:       *cmt.SHA,
-			Timestamp: cmt.Timestamp.String(),
-			Added:     cmt.Added,
-			Removed:   cmt.Removed,
-			Modified:  cmt.Modified,
-		})
+		hc := &HeadCommit{
+			Author:   fromCommitAuthor(cmt.Author),
+			Added:    cmt.Added,
+			Removed:  cmt.Removed,
+			Modified: cmt.Modified,
+		}
+		if cmt.Message != nil {
+			hc.Message = *cmt.Message
+		}
+		if cmt.SHA != nil {
+			hc.SHA = *cmt.SHA
+		}
+		if cmt.Timestamp != nil {
+			hc.Timestamp = cmt.Timestamp.String()
+		}
+		cp.Commits = append(cp.Commits, hc)
 	}
 
 	if e.Repo != nil {
@@ -228,13 +235,19 @@ func fromGithubPushEvent(e *github.PushEvent) *CommitPush {
 
 	if e.HeadCommit != nil {
 		cp.HeadCommit = &HeadCommit{
-			Message:   *e.HeadCommit.Message,
-			Author:    fromCommitAuthor(e.HeadCommit.Author),
-			SHA:       *e.HeadCommit.SHA,
-			Timestamp: e.HeadCommit.Timestamp.String(),
-			Added:     e.HeadCommit.Added,
-			Removed:   e.HeadCommit.Removed,
-			Modified:  e.HeadCommit.Modified,
+			Author:   fromCommitAuthor(e.HeadCommit.Author),
+			Added:    e.HeadCommit.Added,
+			Removed:  e.HeadCommit.Removed,
+			Modified: e.HeadCommit.Modified,
+		}
+		if e.HeadCommit.Message != nil {
+			cp.HeadCommit.Message = *e.HeadCommit.Message
+		}
+		if e.HeadCommit.SHA != nil {
+			cp.HeadCommit.SHA = *e.HeadCommit.SHA
+		}
+		if e.HeadCommit.Timestamp != nil {
+			cp.HeadCommit.Timestamp = e.HeadCommit.Timestamp.String()
 		}
 	}
 
