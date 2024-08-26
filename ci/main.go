@@ -2,23 +2,16 @@ package main
 
 import (
 	"context"
-	"net/url"
 
 	"dagger/ci/internal/dagger"
 )
 
 type Ci struct{}
 
-func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, address, username string, password *dagger.Secret) (string, error) {
-	u, err := url.Parse(address)
-	if err != nil {
-		return "", err
-	}
-	registry := u.Hostname()
-
+func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, tag, username string, password *dagger.Secret) (string, error) {
 	return m.BaseContainer(ctx, src).
-		WithRegistryAuth(registry, username, password).
-		Publish(ctx, address, dagger.ContainerPublishOpts{})
+		WithRegistryAuth("ghcr.io", username, password).
+		Publish(ctx, "ghcr.io/franela/pocketci:"+tag)
 }
 
 func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
@@ -33,12 +26,12 @@ func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *
 		_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
 		return err
 	case dagger.Push:
-		sha, err := ci.CommitPush().HeadCommit().Sha(ctx)
+		sha, err := ci.CommitPush().Sha(ctx)
 		if err != nil {
 			return err
 		}
 		username, _ := ghUsername.Plaintext(ctx)
-		_, err = m.Publish(ctx, src, "ghcr.io/franela/pocketci:"+sha, username, ghPassword)
+		_, err = m.Publish(ctx, src, sha, username, ghPassword)
 		return err
 	}
 
