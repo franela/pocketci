@@ -189,16 +189,21 @@ type User struct {
 
 func fromGithubPushEvent(e *github.PushEvent) *CommitPush {
 	cp := &CommitPush{}
-	cp.Head = *e.Head
-	cp.Ref = *e.Ref
-	cp.Size = *e.Size
+	if e.Head != nil {
+		cp.Head = *e.Head
+	}
+	if e.Ref != nil {
+		cp.Ref = *e.Ref
+	}
+	if e.Size != nil {
+		cp.Size = *e.Size
+	}
 
 	cp.Commits = []*HeadCommit{}
 	for _, cmt := range e.Commits {
 		cp.Commits = append(cp.Commits, &HeadCommit{
 			Message:   *cmt.Message,
 			Author:    fromCommitAuthor(cmt.Author),
-			Distinct:  *cmt.Distinct,
 			SHA:       *cmt.SHA,
 			Timestamp: cmt.Timestamp.String(),
 			Added:     cmt.Added,
@@ -225,7 +230,6 @@ func fromGithubPushEvent(e *github.PushEvent) *CommitPush {
 		cp.HeadCommit = &HeadCommit{
 			Message:   *e.HeadCommit.Message,
 			Author:    fromCommitAuthor(e.HeadCommit.Author),
-			Distinct:  *e.HeadCommit.Distinct,
 			SHA:       *e.HeadCommit.SHA,
 			Timestamp: e.HeadCommit.Timestamp.String(),
 			Added:     e.HeadCommit.Added,
@@ -255,7 +259,6 @@ type CommitPush struct {
 type HeadCommit struct {
 	Message   string
 	Author    *CommitAuthor
-	Distinct  bool
 	SHA       string
 	Timestamp string
 	Added     []string
