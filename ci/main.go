@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"slices"
 
 	"dagger/ci/internal/dagger"
 )
@@ -14,12 +15,16 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, tag, username s
 		Publish(ctx, "ghcr.io/franela/pocketci:"+tag)
 }
 
-func (m *Ci) OnPullRequest(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+func (m *Ci) OnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	if !slices.Contains([]string{"synchronized", "opened", "reopened"}, filter) {
+		return nil
+	}
+
 	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
 	return err
 }
 
-func (m *Ci) OnCommitPush(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+func (m *Ci) OnGithubPushMain(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
 	sha, err := dag.Pocketci(eventTrigger).CommitPush().Sha(ctx)
 	if err != nil {
 		return err
@@ -29,30 +34,6 @@ func (m *Ci) OnCommitPush(ctx context.Context, src *dagger.Directory, eventTrigg
 	_, err = m.Publish(ctx, src, sha, username, ghPassword)
 	return err
 }
-
-/*func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-	ci := dag.Pocketci(eventTrigger)
-	event, err := ci.EventType(ctx)
-	if err != nil {
-		return err
-	}
-
-	switch event {
-	case dagger.PullRequest:
-		_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
-		return err
-	case dagger.Push:
-		sha, err := ci.CommitPush().Sha(ctx)
-		if err != nil {
-			return err
-		}
-		username, _ := ghUsername.Plaintext(ctx)
-		_, err = m.Publish(ctx, src, sha, username, ghPassword)
-		return err
-	}
-
-	return nil
-}*/
 
 func (m *Ci) Test(ctx context.Context, src *dagger.Directory, ghUsername, ghPassword *dagger.Secret) *dagger.Container {
 	return m.base(src).
@@ -86,7 +67,7 @@ func (m *Ci) BaseContainer(ctx context.Context, src *dagger.Directory) *dagger.C
 		WithExec([]string{"apk", "add", "--update", "--no-cache", "docker", "openrc"}).
 		WithFile(
 			"dagger.tgz",
-			dag.HTTP("https://github.com/dagger/dagger/releases/download/v0.11.9/dagger_v0.11.9_linux_amd64.tar.gz"),
+			dag.HTTP("https://github.com/dagger/dagger/releases/download/v0.12.5/dagger_v0.12.5_linux_amd64.tar.gz"),
 		).
 		WithExec([]string{"tar", "xvf", "dagger.tgz"}).
 		WithExec([]string{"mv", "dagger", "/bin/dagger"}).

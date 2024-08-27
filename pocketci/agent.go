@@ -28,6 +28,7 @@ const DaggerVersion = "0.12.5"
 
 type Event struct {
 	EventType      string   `json:"event_type"`
+	Filter         string   `json:"filter"`
 	Changes        []string `json:"changes"`
 	RepositoryName string   `json:"repo_name"`
 
@@ -89,6 +90,7 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 		baseRef    string
 		baseSha    string
 		prNumber   int
+		filter     string
 	)
 	switch ghEvent := githubEvent.(type) {
 	case *github.PullRequestEvent:
@@ -98,10 +100,12 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 		baseRef = strings.TrimPrefix(*ghEvent.PullRequest.Base.Ref, "refs/heads/")
 		baseSha = *ghEvent.PullRequest.Base.SHA
 		prNumber = *ghEvent.Number
+		filter = *ghEvent.Action
 	case *github.PushEvent:
 		gitSha = *ghEvent.After
 		repository = *ghEvent.Repo.FullName
 		ref = strings.TrimPrefix(*ghEvent.Ref, "refs/heads/")
+		filter = ref
 	default:
 		return nil, fmt.Errorf("received event of type %T that is not yet supported", ghEvent)
 	}
@@ -167,6 +171,7 @@ func (agent *Agent) GithubClone(ctx context.Context, netrc *dagger.Secret, event
 
 	return &Event{
 		EventType:        event.EventType,
+		Filter:           filter,
 		Changes:          strings.Split(strings.TrimSuffix(filesChanged, "\n"), "\n"),
 		RepositoryName:   repo,
 		RepoContents:     dir,
@@ -227,12 +232,14 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 		return fmt.Errorf("failed to marshal internal event: %s", err)
 	}
 
-	function, err := getDispatcherFunction(ctx, event.EventType, event.RepoContents.Directory(cfg.ModulePath).AsModule().Initialize())
+	function, fnArgs, err := dispatcherFunction(ctx, "github", event.EventType, event.Filter, event.RepoContents.Directory(cfg.ModulePath).AsModule().Initialize())
 	if err != nil {
 		return fmt.Errorf("failed to get dispatcher function: %s", err)
 	}
 
-	slog.Info("launching pocketci agent container dispatch call", slog.String("repository", event.RepositoryName), slog.String("event_type", ghEvent.EventType))
+	function = strcase.ToKebab(function)
+
+	slog.Info("launching pocketci agent container dispatch call", slog.String("function", function), slog.String("repository", event.RepositoryName), slog.String("event_type", ghEvent.EventType))
 
 	stdout, err := AgentContainer(agent.dag).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
@@ -249,7 +256,7 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 				c = c.WithEnvVariable(key, val)
 			}
 
-			script := fmt.Sprintf(`unset TRACEPARENT;unset OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:38015;unset OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:38015/v1/traces;unset OTEL_EXPORTER_OTLP_TRACES_LIVE=1;unset OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:38015/v1/logs;unset OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:38015/v1/metrics; dagger call -m %s --progress plain %s --src . --event-trigger /payload.json`, cfg.ModulePath, function)
+			script := fmt.Sprintf(`unset TRACEPARENT;unset OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:38015;unset OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:38015/v1/traces;unset OTEL_EXPORTER_OTLP_TRACES_LIVE=1;unset OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:38015/v1/logs;unset OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:38015/v1/metrics; dagger call -m %s --progress plain %s %s --src . --event-trigger /payload.json`, cfg.ModulePath, function, fnArgs)
 			for _, secret := range cfg.Secrets {
 				c = c.WithSecretVariable(secret.FromEnv, agent.dag.SetSecret(secret.Name, os.Getenv(secret.FromEnv)))
 				script = fmt.Sprintf("%s --%s env:%s", script, strcase.ToKebab(secret.Name), secret.FromEnv)
