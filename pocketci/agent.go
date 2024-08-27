@@ -239,7 +239,7 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 
 	function = strcase.ToKebab(function)
 
-	slog.Info("launching pocketci agent container dispatch call", slog.String("function", function), slog.String("repository", event.RepositoryName), slog.String("event_type", ghEvent.EventType))
+	slog.Info("launching pocketci agent container dispatch call", slog.String("repository", event.RepositoryName), slog.String("function", function), slog.String("event_type", ghEvent.EventType), slog.String("filter", event.Filter))
 
 	stdout, err := AgentContainer(agent.dag).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).

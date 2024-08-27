@@ -24,7 +24,7 @@ func (m *Ci) OnGithubPullRequest(ctx context.Context, filter string, src *dagger
 	return err
 }
 
-func (m *Ci) OnGithubPushMain(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+func (m *Ci) OnGithubPushMain(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
 	sha, err := dag.Pocketci(eventTrigger).CommitPush().Sha(ctx)
 	if err != nil {
 		return err
