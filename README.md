@@ -72,14 +72,9 @@ run: |
           dagger call -m ./ci test --src .
 ```
 
-With `pocketci` you instead take care of interpreting the `triggers` defined above within your module. First you define the location of your dispatcher module, what secret parameters it needs and which `events` trigger a call to it:
+With `pocketci` you take care of interpreting the `triggers` defined above within your module. First you define the location of your dispatcher module, what secret parameters it needs and the list of files that when changed should cause your module to be triggered:
 ```yaml
 module-path: ./ci
-events:
-  pull_request:
-    - main
-  push:
-    - main
 paths:
   - "**/**.go"
 secrets:
@@ -117,14 +112,19 @@ func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *
 }
 ```
 
-Or you can create separate functions for each of the events (`OnPullRequest` & `OnCommitPush`) and let `pocketci` take care of calling the corresponding one:
+Or you can create separate functions for each of the events that Github will send. This is the prefered way of handling it at the moment. Pocketci matches functions with the name of `On<Vendor><Event><Filter>` and each smaller variant (e.g `On<Vendor>`) based on the event that we received. If we are trying to individually match a pull request created and a commit pushed **against main** then we could do:
 ```go
-func (m *Ci) OnPullRequest(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+func (m *Ci) OnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+    // Only run the pipeline if its one of these events
+	if !slices.Contains([]string{"synchronized", "opened", "reopened"}, filter) {
+		return nil
+	}
 	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
 	return err
 }
 
-func (m *Ci) OnCommitPush(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+// Only run the pipeline when a commit gets pushed to `main`.
+func (m *Ci) OnGithubPushMain(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
 	sha, err := dag.Pocketci(eventTrigger).CommitPush().Sha(ctx)
 	if err != nil {
 		return err
@@ -136,7 +136,7 @@ func (m *Ci) OnCommitPush(ctx context.Context, src *dagger.Directory, eventTrigg
 }
 ```
 
-You can alternatively parse the `eventTrigger` yourself without the use of the `pocketci` module. It is JSON file with the data contained [here](pocketci/server.go#L21). It will contain some metadata added by `pocketci` and the payload sent by the VCS.
+We could also specify a `OnGithubPush` and handle the `filter` like we did in `OnGithubPullRequest`. Or simply do `OnGithub` and handle each event ourselves. A less abstracted alternative would entail parsing the `eventTrigger` yourself (either by using the `pocketci` module or doing it by hand). It is JSON file with the data contained [here](pocketci/server.go#L21). It will contain some metadata added by `pocketci` and the payload sent by the VCS. This is available to cover the more edgy use cases.
 
 ### `Dispatch` interface
 

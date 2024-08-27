@@ -23,6 +23,74 @@ var (
 	ghCommitPush []byte
 )
 
+func moduleBasePath() string {
+	if os.Getenv("TRACEPARENT") != "" {
+		return "./pocketci/test-data"
+	}
+	return "test-data"
+}
+
+func TestDispatcherFunction(t *testing.T) {
+	ctx := context.Background()
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		t.Fatalf("failed to connect to dagger: %v", err)
+	}
+
+	cases := []struct {
+		name                  string
+		mod                   *dagger.Module
+		vendor, event, filter string
+		expectedFunction      string
+		expectedArgs          string
+	}{
+		{
+			name:             "filter gets matched",
+			mod:              client.Host().Directory(moduleBasePath() + "/dispatch-filter").AsModule().Initialize(),
+			vendor:           "github",
+			event:            "pull_request",
+			filter:           "opened",
+			expectedFunction: "onGithubPullRequestOpened",
+			expectedArgs:     "",
+		},
+		{
+			name:             "event gets matched",
+			mod:              client.Host().Directory(moduleBasePath() + "/dispatch-event").AsModule().Initialize(),
+			vendor:           "github",
+			event:            "pull_request",
+			filter:           "opened",
+			expectedFunction: "onGithubPullRequest",
+			expectedArgs:     "--filter opened",
+		},
+		{
+			name:             "vendor gets matched",
+			mod:              client.Host().Directory(moduleBasePath() + "/dispatch-vendor").AsModule().Initialize(),
+			vendor:           "github",
+			event:            "pull_request",
+			filter:           "opened",
+			expectedFunction: "onGithub",
+			expectedArgs:     "--filter opened --event pull_request",
+		},
+		{
+			name:             "dispatch gets matched",
+			mod:              client.Host().Directory(moduleBasePath() + "/dispatch").AsModule().Initialize(),
+			vendor:           "github",
+			event:            "pull_request",
+			filter:           "opened",
+			expectedFunction: "dispatch",
+			expectedArgs:     "--filter opened --event pull_request --vendor github",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			fn, args, err := dispatcherFunction(ctx, "github", "pull_request", "opened", test.mod)
+			assert.NilError(t, err)
+			assert.Equal(t, fn, test.expectedFunction)
+			assert.Equal(t, args, test.expectedArgs)
+		})
+	}
+}
+
 func TestShouldHandle(t *testing.T) {
 	cases := []struct {
 		name     string
