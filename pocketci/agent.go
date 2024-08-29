@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
 	"github.com/bmatcuk/doublestar"
@@ -232,43 +233,50 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 		return fmt.Errorf("failed to marshal internal event: %s", err)
 	}
 
-	function, fnArgs, err := dispatcherFunction(ctx, "github", event.EventType, event.Filter, event.RepoContents.Directory(cfg.ModulePath).AsModule().Initialize())
+	functions, err := dispatcherFunction(ctx, "github", event.EventType, event.Filter, event.RepoContents.Directory(cfg.ModulePath).AsModule().Initialize())
 	if err != nil {
 		return fmt.Errorf("failed to get dispatcher function: %s", err)
 	}
 
-	function = strcase.ToKebab(function)
+	var g errgroup.Group
+	for _, fn := range functions {
+		g.Go(func() error {
+			slog.Info("launching pocketci agent container dispatch call", slog.String("repository", event.RepositoryName), slog.String("function", fn.name), slog.String("event_type", ghEvent.EventType), slog.String("filter", event.Filter))
 
-	slog.Info("launching pocketci agent container dispatch call", slog.String("repository", event.RepositoryName), slog.String("function", function), slog.String("event_type", ghEvent.EventType), slog.String("filter", event.Filter))
-
-	stdout, err := AgentContainer(agent.dag).
-		WithEnvVariable("CACHE_BUST", time.Now().String()).
-		WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
-		WithDirectory("/"+event.RepositoryName, event.RepoContents).
-		WithWorkdir("/"+event.RepositoryName).
-		WithNewFile("/raw-payload.json", string(ghEvent.Payload)).
-		WithNewFile("/payload.json", string(payload)).
-		WithEnvVariable("CI", "pocketci").
-		With(func(c *dagger.Container) *dagger.Container {
-			// set contextual variables used by the dagger CLI to report labels
-			// to dagger cloud
-			for key, val := range event.ContextVariables {
-				c = c.WithEnvVariable(key, val)
+			call := fmt.Sprintf("dagger call -m %s --progress plain %s %s --src . --event-trigger /payload.json", cfg.ModulePath, fn.name, fn.args)
+			stdout, err := AgentContainer(agent.dag).
+				WithEnvVariable("CACHE_BUST", time.Now().String()).
+				WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
+				WithDirectory("/"+event.RepositoryName, event.RepoContents).
+				WithWorkdir("/"+event.RepositoryName).
+				WithNewFile("/raw-payload.json", string(ghEvent.Payload)).
+				WithNewFile("/payload.json", string(payload)).
+				WithEnvVariable("CI", "pocketci").
+				With(func(c *dagger.Container) *dagger.Container {
+					// set contextual variables used by the dagger CLI to report labels
+					// to dagger cloud
+					for key, val := range event.ContextVariables {
+						c = c.WithEnvVariable(key, val)
+					}
+					script := fmt.Sprintf("unset TRACEPARENT;unset OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:38015;unset OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:38015/v1/traces;unset OTEL_EXPORTER_OTLP_TRACES_LIVE=1;unset OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:38015/v1/logs;unset OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:38015/v1/metrics; %s", call)
+					for _, secret := range cfg.Secrets {
+						c = c.WithSecretVariable(secret.FromEnv, agent.dag.SetSecret(secret.Name, os.Getenv(secret.FromEnv)))
+						script = fmt.Sprintf("%s --%s env:%s", script, strcase.ToKebab(secret.Name), secret.FromEnv)
+					}
+					return c.WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{
+						ExperimentalPrivilegedNesting: true,
+					})
+				}).
+				Stdout(ctx)
+			if err != nil {
+				return err
 			}
 
-			script := fmt.Sprintf(`unset TRACEPARENT;unset OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:38015;unset OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:38015/v1/traces;unset OTEL_EXPORTER_OTLP_TRACES_LIVE=1;unset OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:38015/v1/logs;unset OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:38015/v1/metrics; dagger call -m %s --progress plain %s %s --src . --event-trigger /payload.json`, cfg.ModulePath, function, fnArgs)
-			for _, secret := range cfg.Secrets {
-				c = c.WithSecretVariable(secret.FromEnv, agent.dag.SetSecret(secret.Name, os.Getenv(secret.FromEnv)))
-				script = fmt.Sprintf("%s --%s env:%s", script, strcase.ToKebab(secret.Name), secret.FromEnv)
-			}
-			return c.WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			})
-		}).
-		Stdout(ctx)
-
-	fmt.Println(stdout)
-	return err
+			fmt.Printf("$ %s\n%s", call, stdout)
+			return nil
+		})
+	}
+	return g.Wait()
 }
 
 func getDispatcherFunction(ctx context.Context, eventType string, mod *dagger.Module) (string, error) {

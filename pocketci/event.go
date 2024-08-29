@@ -4,10 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/iancoleman/strcase"
 )
+
+type function struct {
+	name string
+	args string
+}
 
 // dispatcherFunction returns the function that should be called for the corresponding
 // module given the vendor, eventType and filter that were specified.
@@ -22,16 +28,16 @@ import (
 // 4. Dispatch
 // There are unit tests available with real dagger modules that make sure
 // this logic remains true.
-func dispatcherFunction(ctx context.Context, vendor, eventType, filter string, mod *dagger.Module) (string, string, error) {
+func dispatcherFunction(ctx context.Context, vendor, eventType, filter string, mod *dagger.Module) ([]function, error) {
 	modName, err := mod.Name(ctx)
 	if err != nil {
-		return "", "", fmt.Errorf("could not get module name: %s", err)
+		return nil, fmt.Errorf("could not get module name: %s", err)
 	}
 	modName = strcase.ToLowerCamel(modName)
 
 	objects, err := mod.Objects(ctx)
 	if err != nil {
-		return "", "", fmt.Errorf("could not list module objects: %s", err)
+		return nil, fmt.Errorf("could not list module objects: %s", err)
 	}
 
 	for _, obj := range objects {
@@ -52,14 +58,14 @@ func dispatcherFunction(ctx context.Context, vendor, eventType, filter string, m
 
 		funcs, err := object.Functions(ctx)
 		if err != nil {
-			return "", "", fmt.Errorf("could not list functions from object %s: %s", objName, err)
+			return nil, fmt.Errorf("could not list functions from object %s: %s", objName, err)
 		}
 
 		functions := map[string]*dagger.Function{}
 		for _, fn := range funcs {
 			fnName, err := fn.Name(ctx)
 			if err != nil {
-				return "", "", fmt.Errorf("could not get function name for object %s: %s", objName, err)
+				return nil, fmt.Errorf("could not get function name for object %s: %s", objName, err)
 			}
 			functions[fnName] = &fn
 		}
@@ -69,6 +75,7 @@ func dispatcherFunction(ctx context.Context, vendor, eventType, filter string, m
 			vendorEventMatch       = strcase.ToLowerCamel(fmt.Sprintf("on-%s-%s", vendor, eventType))
 			vendorMatch            = strcase.ToLowerCamel(fmt.Sprintf("on-%s", vendor))
 			dispatcherMatch        = "dispatch"
+			callers                = []function{}
 		)
 		checks := []struct {
 			name                              string
@@ -80,34 +87,41 @@ func dispatcherFunction(ctx context.Context, vendor, eventType, filter string, m
 			{dispatcherMatch, true, true, true},
 		}
 		for _, check := range checks {
-			fn, ok := functions[check.name]
-			if !ok {
-				continue
-			}
-			valid, err := isValidSignature(ctx, fn, check.withVendor, check.withEvent, check.withFilter)
-			if err != nil {
-				return "", "", err
-			}
-			if !valid {
-				return "", "", fmt.Errorf("%s is missing required arguments", vendorEventFilterMatch)
-			}
+			for fnName, fn := range functions {
+				if fnName != check.name && !strings.HasSuffix(fnName, strcase.ToCamel(check.name)) {
+					continue
+				}
 
-			args := ""
-			if check.withFilter {
-				args = "--filter " + filter
-			}
-			if check.withEvent {
-				args += " --event " + eventType
-			}
-			if check.withVendor {
-				args += " --vendor " + vendor
-			}
+				valid, err := isValidSignature(ctx, fn, check.withVendor, check.withEvent, check.withFilter)
+				if err != nil {
+					return nil, err
+				}
+				if !valid {
+					return nil, fmt.Errorf("%s is missing required arguments", vendorEventFilterMatch)
+				}
 
-			return check.name, args, nil
+				args := ""
+				if check.withFilter {
+					args = "--filter " + filter
+				}
+				if check.withEvent {
+					args += " --event " + eventType
+				}
+				if check.withVendor {
+					args += " --vendor " + vendor
+				}
+
+				callers = append(callers, function{
+					name: strcase.ToKebab(fnName),
+					args: args,
+				})
+			}
+			if len(callers) != 0 {
+				return callers, nil
+			}
 		}
 	}
-
-	return "", "", errors.New("did not find dispatcher function nor main object")
+	return nil, errors.New("did not find dispatcher function nor main object")
 }
 
 func isValidSignature(ctx context.Context, fn *dagger.Function, withVendor, withEvent, withFilter bool) (bool, error) {
