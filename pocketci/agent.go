@@ -239,8 +239,9 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 	}
 
 	var g errgroup.Group
-	for _, fn := range functions {
+	for _, function := range functions {
 		g.Go(func() error {
+			fn := function
 			slog.Info("launching pocketci agent container dispatch call", slog.String("repository", event.RepositoryName), slog.String("function", fn.name), slog.String("event_type", ghEvent.EventType), slog.String("filter", event.Filter))
 
 			call := fmt.Sprintf("dagger call -m %s --progress plain %s %s --src . --event-trigger /payload.json", cfg.ModulePath, fn.name, fn.args)
@@ -277,100 +278,6 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 		})
 	}
 	return g.Wait()
-}
-
-func getDispatcherFunction(ctx context.Context, eventType string, mod *dagger.Module) (string, error) {
-	modName, err := mod.Name(ctx)
-	if err != nil {
-		return "", fmt.Errorf("could not get module name: %s", err)
-	}
-
-	objects, err := mod.Objects(ctx)
-	if err != nil {
-		return "", fmt.Errorf("could not list module objects: %s", err)
-	}
-
-	for _, obj := range objects {
-		object := obj.AsObject()
-		if object == nil {
-			continue
-		}
-
-		objName, err := object.Name(ctx)
-		if err != nil {
-			continue
-		}
-
-		objName = strcase.ToLowerCamel(objName)
-		if objName != modName {
-			continue
-		}
-
-		funcs, err := object.Functions(ctx)
-		if err != nil {
-			return "", fmt.Errorf("could not list functions from object %s: %s", objName, err)
-		}
-
-		var function *dagger.Function
-		for _, fn := range funcs {
-			fnName, err := fn.Name(ctx)
-			if err != nil {
-				return "", fmt.Errorf("could not get function name for object %s: %s", objName, err)
-			}
-
-			// `dispatch` has priority over all other functions
-			if fnName == "dispatch" {
-				function = &fn
-				break
-			}
-
-			// do not break in this if so that if `dispatch` is found later on
-			// in the list of funcs we can still find it
-			if eventType == "pull_request" && fnName == "onPullRequest" {
-				function = &fn
-			}
-			if eventType == "push" && fnName == "onCommitPush" {
-				function = &fn
-			}
-		}
-
-		if function == nil {
-			return "", errors.New("no pocketci entrypoint specified")
-		}
-
-		fnName, _ := function.Name(ctx)
-		args, err := function.Args(ctx)
-		if err != nil {
-			return "", fmt.Errorf("could not get args for function %s of %s: %s", fnName, objName, err)
-		}
-
-		var hasEventTrigger, hasSrc bool
-		for _, arg := range args {
-			argName, err := arg.Name(ctx)
-			if err != nil {
-				return "", fmt.Errorf("could not argument for function %s of %s: %s", fnName, objName, err)
-			}
-
-			if argName == "src" {
-				hasSrc = true
-			}
-			if argName == "eventTrigger" {
-				hasEventTrigger = true
-			}
-		}
-
-		if !hasEventTrigger {
-			return "", fmt.Errorf("function %s of %s is missing `eventTrigger` argument", fnName, objName)
-		}
-
-		if !hasSrc {
-			return "", fmt.Errorf("function %s of %s is missing the `src` argument", fnName, objName)
-		}
-
-		return strcase.ToKebab(fnName), nil
-	}
-
-	return "", errors.New("did not find function nor main object")
 }
 
 func parsePocketciConfig(ctx context.Context, config *dagger.File) (*Spec, error) {
