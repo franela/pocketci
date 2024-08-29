@@ -115,8 +115,7 @@ func (m *Ci) Dispatch(ctx context.Context, src *dagger.Directory, eventTrigger *
 Or you can create separate functions for each of the events that Github will send. This is the prefered way of handling it at the moment. Pocketci matches functions with the name of `On<Vendor><Event><Filter>` and each smaller variant (e.g `On<Vendor>`) based on the event that we received. If we are trying to individually match a pull request created and a commit pushed **against main** then we could do:
 ```go
 func (m *Ci) OnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-    // Only run the pipeline if its one of these events
-	if !slices.Contains([]string{"synchronized", "opened", "reopened"}, filter) {
+	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
 		return nil
 	}
 	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
@@ -137,6 +136,29 @@ func (m *Ci) OnGithubPushMain(ctx context.Context, src *dagger.Directory, eventT
 ```
 
 We could also specify a `OnGithubPush` and handle the `filter` like we did in `OnGithubPullRequest`. Or simply do `OnGithub` and handle each event ourselves. A less abstracted alternative would entail parsing the `eventTrigger` yourself (either by using the `pocketci` module or doing it by hand). It is JSON file with the data contained [here](pocketci/server.go#L21). It will contain some metadata added by `pocketci` and the payload sent by the VCS. This is available to cover the more edgy use cases.
+
+**But what if I want to run multiple dagger calls for a given event trigger?**
+
+In that case, you can specify your function trigger as a suffix and any name you like as a prefix. For example, if you want to run both `Lint` and `Test` on every pull request but on separate function calls you can define two functions for the same trigger and pocketci will call both in parallel:
+```go
+func (m *Ci) TestOnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
+		return nil
+	}
+
+	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+	return err
+}
+
+func (m *Ci) LintOnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
+		return nil
+	}
+
+	_, err := m.Lint(ctx, src).Stdout(ctx)
+	return err
+}
+```
 
 ### `Dispatch` interface
 

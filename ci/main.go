@@ -7,6 +7,12 @@ import (
 	"dagger/ci/internal/dagger"
 )
 
+const (
+	GolangLintVersion = "v1.54.2"
+
+	LintTimeout = "5m"
+)
+
 type Ci struct{}
 
 func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, tag, username string, password *dagger.Secret) (string, error) {
@@ -15,12 +21,21 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, tag, username s
 		Publish(ctx, "ghcr.io/franela/pocketci:"+tag)
 }
 
-func (m *Ci) OnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-	if !slices.Contains([]string{"synchronized", "opened", "reopened"}, filter) {
+func (m *Ci) TestOnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
 		return nil
 	}
 
 	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+	return err
+}
+
+func (m *Ci) LintOnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
+	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
+		return nil
+	}
+
+	_, err := m.Lint(ctx, src).Stdout(ctx)
 	return err
 }
 
@@ -40,6 +55,14 @@ func (m *Ci) Test(ctx context.Context, src *dagger.Directory, ghUsername, ghPass
 		WithSecretVariable("GH_USERNAME", ghUsername).
 		WithSecretVariable("GH_PASSWORD", ghPassword).
 		WithExec([]string{"sh", "-c", "go test -v ./pocketci/..."}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+}
+
+func (m *Ci) Lint(ctx context.Context, src *dagger.Directory) *dagger.Container {
+	return dag.Container().
+		From("golangci/golangci-lint:"+GolangLintVersion).
+		WithMountedDirectory("/app", src).
+		WithWorkdir("/app").
+		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", LintTimeout})
 }
 
 func (m *Ci) base(src *dagger.Directory) *dagger.Container {

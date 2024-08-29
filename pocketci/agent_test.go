@@ -41,52 +41,59 @@ func TestDispatcherFunction(t *testing.T) {
 		name                  string
 		mod                   *dagger.Module
 		vendor, event, filter string
-		expectedFunction      string
-		expectedArgs          string
+		expectedFunctions     []function
 	}{
 		{
-			name:             "filter gets matched",
-			mod:              client.Host().Directory(moduleBasePath() + "/dispatch-filter").AsModule().Initialize(),
-			vendor:           "github",
-			event:            "pull_request",
-			filter:           "opened",
-			expectedFunction: "onGithubPullRequestOpened",
-			expectedArgs:     "",
+			name:              "filter gets matched",
+			mod:               client.Host().Directory(moduleBasePath() + "/dispatch-filter").AsModule().Initialize(),
+			vendor:            "github",
+			event:             "pull_request",
+			filter:            "opened",
+			expectedFunctions: []function{{"on-github-pull-request-opened", ""}},
 		},
 		{
-			name:             "event gets matched",
-			mod:              client.Host().Directory(moduleBasePath() + "/dispatch-event").AsModule().Initialize(),
-			vendor:           "github",
-			event:            "pull_request",
-			filter:           "opened",
-			expectedFunction: "onGithubPullRequest",
-			expectedArgs:     "--filter opened",
+			name:              "event gets matched",
+			mod:               client.Host().Directory(moduleBasePath() + "/dispatch-event").AsModule().Initialize(),
+			vendor:            "github",
+			event:             "pull_request",
+			filter:            "opened",
+			expectedFunctions: []function{{"on-github-pull-request", "--filter opened"}},
 		},
 		{
-			name:             "vendor gets matched",
-			mod:              client.Host().Directory(moduleBasePath() + "/dispatch-vendor").AsModule().Initialize(),
-			vendor:           "github",
-			event:            "pull_request",
-			filter:           "opened",
-			expectedFunction: "onGithub",
-			expectedArgs:     "--filter opened --event pull_request",
+			name:              "vendor gets matched",
+			mod:               client.Host().Directory(moduleBasePath() + "/dispatch-vendor").AsModule().Initialize(),
+			vendor:            "github",
+			event:             "pull_request",
+			filter:            "opened",
+			expectedFunctions: []function{{"on-github", "--filter opened --event pull_request"}},
 		},
 		{
-			name:             "dispatch gets matched",
-			mod:              client.Host().Directory(moduleBasePath() + "/dispatch").AsModule().Initialize(),
-			vendor:           "github",
-			event:            "pull_request",
-			filter:           "opened",
-			expectedFunction: "dispatch",
-			expectedArgs:     "--filter opened --event pull_request --vendor github",
+			name:              "dispatch gets matched",
+			mod:               client.Host().Directory(moduleBasePath() + "/dispatch").AsModule().Initialize(),
+			vendor:            "github",
+			event:             "pull_request",
+			filter:            "opened",
+			expectedFunctions: []function{{"dispatch", "--filter opened --event pull_request --vendor github"}},
+		},
+		{
+			name:   "event with prefix gets matched",
+			mod:    client.Host().Directory(moduleBasePath() + "/dispatch-suffix").AsModule().Initialize(),
+			vendor: "github",
+			event:  "pull_request",
+			filter: "opened",
+			expectedFunctions: []function{
+				{"lint-on-github-pull-request", "--filter opened"},
+				{"test-on-github-pull-request", "--filter opened"},
+			},
 		},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			fn, args, err := dispatcherFunction(ctx, "github", "pull_request", "opened", test.mod)
+			fns, err := dispatcherFunction(ctx, "github", "pull_request", "opened", test.mod)
 			assert.NilError(t, err)
-			assert.Equal(t, fn, test.expectedFunction)
-			assert.Equal(t, args, test.expectedArgs)
+			for i, fn := range fns {
+				assert.Equal(t, fn, test.expectedFunctions[i])
+			}
 		})
 	}
 }
