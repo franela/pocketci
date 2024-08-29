@@ -15,6 +15,7 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, tag, username s
 		Publish(ctx, "ghcr.io/franela/pocketci:"+tag)
 }
 
+// This is a change for the team demo!
 func (m *Ci) OnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
 	if !slices.Contains([]string{"synchronized", "opened", "reopened"}, filter) {
 		return nil
