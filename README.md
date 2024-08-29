@@ -137,7 +137,7 @@ func (m *Ci) OnGithubPushMain(ctx context.Context, src *dagger.Directory, eventT
 
 We could also specify a `OnGithubPush` and handle the `filter` like we did in `OnGithubPullRequest`. Or simply do `OnGithub` and handle each event ourselves. A less abstracted alternative would entail parsing the `eventTrigger` yourself (either by using the `pocketci` module or doing it by hand). It is JSON file with the data contained [here](pocketci/server.go#L21). It will contain some metadata added by `pocketci` and the payload sent by the VCS. This is available to cover the more edgy use cases.
 
-**But what I want to run multiple dagger calls for a given event?**
+**But what if I want to run multiple dagger calls for a given event trigger?**
 
 In that case, you can specify your function trigger as a suffix and any name you like as a prefix. For example, if you want to run both `Lint` and `Test` on every pull request but on separate function calls you can define two functions for the same trigger and pocketci will call both in parallel:
 ```go
