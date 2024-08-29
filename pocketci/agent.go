@@ -239,43 +239,44 @@ func (agent *Agent) HandleGithub(ctx context.Context, netrc *dagger.Secret, ghEv
 	}
 
 	var g errgroup.Group
-	for _, function := range functions {
-		g.Go(func() error {
-			fn := function
-			slog.Info("launching pocketci agent container dispatch call", slog.String("repository", event.RepositoryName), slog.String("function", fn.name), slog.String("event_type", ghEvent.EventType), slog.String("filter", event.Filter))
+	for _, fn := range functions {
+		g.Go(func(fn function) func() error {
+			return func() error {
+				slog.Info("launching pocketci agent container dispatch call", slog.String("repository", event.RepositoryName), slog.String("function", fn.name), slog.String("event_type", ghEvent.EventType), slog.String("filter", event.Filter))
 
-			call := fmt.Sprintf("dagger call -m %s --progress plain %s %s --src . --event-trigger /payload.json", cfg.ModulePath, fn.name, fn.args)
-			stdout, err := AgentContainer(agent.dag).
-				WithEnvVariable("CACHE_BUST", time.Now().String()).
-				WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
-				WithDirectory("/"+event.RepositoryName, event.RepoContents).
-				WithWorkdir("/"+event.RepositoryName).
-				WithNewFile("/raw-payload.json", string(ghEvent.Payload)).
-				WithNewFile("/payload.json", string(payload)).
-				WithEnvVariable("CI", "pocketci").
-				With(func(c *dagger.Container) *dagger.Container {
-					// set contextual variables used by the dagger CLI to report labels
-					// to dagger cloud
-					for key, val := range event.ContextVariables {
-						c = c.WithEnvVariable(key, val)
-					}
-					script := fmt.Sprintf("unset TRACEPARENT;unset OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:38015;unset OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:38015/v1/traces;unset OTEL_EXPORTER_OTLP_TRACES_LIVE=1;unset OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:38015/v1/logs;unset OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:38015/v1/metrics; %s", call)
-					for _, secret := range cfg.Secrets {
-						c = c.WithSecretVariable(secret.FromEnv, agent.dag.SetSecret(secret.Name, os.Getenv(secret.FromEnv)))
-						script = fmt.Sprintf("%s --%s env:%s", script, strcase.ToKebab(secret.Name), secret.FromEnv)
-					}
-					return c.WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{
-						ExperimentalPrivilegedNesting: true,
-					})
-				}).
-				Stdout(ctx)
-			if err != nil {
-				return err
+				call := fmt.Sprintf("dagger call -m %s --progress plain %s %s --src . --event-trigger /payload.json", cfg.ModulePath, fn.name, fn.args)
+				stdout, err := AgentContainer(agent.dag).
+					WithEnvVariable("CACHE_BUST", time.Now().String()).
+					WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
+					WithDirectory("/"+event.RepositoryName, event.RepoContents).
+					WithWorkdir("/"+event.RepositoryName).
+					WithNewFile("/raw-payload.json", string(ghEvent.Payload)).
+					WithNewFile("/payload.json", string(payload)).
+					WithEnvVariable("CI", "pocketci").
+					With(func(c *dagger.Container) *dagger.Container {
+						// set contextual variables used by the dagger CLI to report labels
+						// to dagger cloud
+						for key, val := range event.ContextVariables {
+							c = c.WithEnvVariable(key, val)
+						}
+						script := fmt.Sprintf("unset TRACEPARENT;unset OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:38015;unset OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:38015/v1/traces;unset OTEL_EXPORTER_OTLP_TRACES_LIVE=1;unset OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:38015/v1/logs;unset OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:38015/v1/metrics; %s", call)
+						for _, secret := range cfg.Secrets {
+							c = c.WithSecretVariable(secret.FromEnv, agent.dag.SetSecret(secret.Name, os.Getenv(secret.FromEnv)))
+							script = fmt.Sprintf("%s --%s env:%s", script, strcase.ToKebab(secret.Name), secret.FromEnv)
+						}
+						return c.WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{
+							ExperimentalPrivilegedNesting: true,
+						})
+					}).
+					Stdout(ctx)
+				if err != nil {
+					return err
+				}
+
+				fmt.Printf("$ %s\n%s", call, stdout)
+				return nil
 			}
-
-			fmt.Printf("$ %s\n%s", call, stdout)
-			return nil
-		})
+		}(fn))
 	}
 	return g.Wait()
 }
