@@ -26,8 +26,9 @@ type Event struct {
 	EnvVariables map[string]string `json:"-"`
 }
 
-// Dispatcher receives a list of functions and calls each one. Whether the function
-// calls happen sync or async is up to the implementer.
+// Dispatcher receives a list of functions and is in charge of making sure
+// each function call happens at most once. Whether they happen sync or async
+// is up to the implementation.
 // NOTE: if we eventually want to support remote function calls through a queue
 // sort of system this interface (and the whole clone approach) will likely have
 // to change. We can't really package the dagger.Directory of the repository through
@@ -38,6 +39,7 @@ type Dispatcher interface {
 	Dispatch(ctx context.Context, spec *Spec, functions []Function, event *Event) error
 }
 
+// LocalDispatcher makes each of the function calls directly on the host.
 type LocalDispatcher struct {
 	dag         *dagger.Client
 	parallelism int
