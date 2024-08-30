@@ -1,0 +1,5 @@
+{
+  "name": "dispatch-changed-files",
+  "sdk": "go",
+  "engineVersion": "v0.12.5"
+}

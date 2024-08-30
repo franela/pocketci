@@ -1,11 +1,4 @@
 module-path: ./ci
-events:
-  pull_request:
-    - main
-  push:
-    - main
-paths:
-  - "**/**.go"
 secrets:
   - name: ghUsername
     from-env: GITHUB_USERNAME
