@@ -1,0 +1,5 @@
+{
+  "name": "dispatch-match-vendor",
+  "sdk": "go",
+  "engineVersion": "v0.12.5"
+}

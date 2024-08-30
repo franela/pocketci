@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"dagger.io/dagger"
@@ -88,8 +89,13 @@ func matchFunctions(ctx context.Context, vendor, eventType, filter string, chang
 					return nil, fmt.Errorf("could not get args for function %s: %s", fnName, err)
 				}
 
-				var hasEventTrigger, hasSrc, hasVendor, hasEvent, hasFilter bool
-				var hasChanges, matchChanges bool
+				var (
+					hasEventTrigger, hasSrc  bool
+					hasEvent, matchEvent     bool
+					hasFilter, matchFilter   bool
+					hasVendor, matchVendor   bool
+					hasChanges, matchChanges bool
+				)
 				for _, arg := range args {
 					argName, err := arg.Name(ctx)
 					if err != nil {
@@ -107,7 +113,7 @@ func matchFunctions(ctx context.Context, vendor, eventType, filter string, chang
 						}
 						patterns := strings.Split(strings.ReplaceAll(string(defaultValue), `"`, ""), ",")
 						if len(patterns) != 0 && !Match(changes, patterns...) {
-							slog.Debug("on-changes do not match files changed", slog.String("function", fnName),
+							slog.Info("`on-changes` do not match files changed", slog.String("function", fnName),
 								slog.String("on-changes", string(defaultValue)), slog.String("changes", strings.Join(changes, ",")))
 							continue
 						}
@@ -120,18 +126,68 @@ func matchFunctions(ctx context.Context, vendor, eventType, filter string, chang
 					if argName == "eventTrigger" {
 						hasEventTrigger = true
 					}
+
+					var required string
 					if argName == "vendor" {
 						hasVendor = true
+						matchVendor, required, err = matchArg(ctx, fnName, arg, vendor)
+						if err != nil {
+							return nil, err
+						}
+
+						if !matchVendor {
+							slog.Info("`vendor` value does not match current vendor", slog.String("function", fnName),
+								slog.String("required-vendor", required),
+								slog.String("current-vendor", vendor))
+							continue
+						}
 					}
+
 					if argName == "filter" {
 						hasFilter = true
+
+						matchFilter, required, err = matchArg(ctx, fnName, arg, filter)
+						if err != nil {
+							return nil, err
+						}
+
+						if !matchFilter {
+							slog.Info("`filter` value does not match current filter", slog.String("function", fnName),
+								slog.String("required-filter", required),
+								slog.String("current-filter", filter))
+							continue
+						}
 					}
 					if argName == "event" {
 						hasEvent = true
+
+						matchEvent, required, err = matchArg(ctx, fnName, arg, eventType)
+						if err != nil {
+							return nil, err
+						}
+
+						if !matchEvent {
+							slog.Info("`event` value does not match current event", slog.String("function", fnName),
+								slog.String("required-event", required),
+								slog.String("current-event", eventType))
+							continue
+						}
 					}
 				}
 
 				if hasChanges && !matchChanges {
+					continue
+				}
+
+				if hasVendor && !matchVendor {
+					continue
+				}
+
+				if hasEvent && !matchEvent {
+					continue
+				}
+
+				if hasFilter && !matchFilter {
 					continue
 				}
 
@@ -175,4 +231,15 @@ func matchFunctions(ctx context.Context, vendor, eventType, filter string, chang
 		}
 	}
 	return nil, ErrNoFunctionsMatched
+}
+
+func matchArg(ctx context.Context, fnName string, arg dagger.FunctionArg, value string) (bool, string, error) {
+	argName, _ := arg.Name(ctx)
+	defaultValue, err := arg.DefaultValue(ctx)
+	if err != nil {
+		return false, string(defaultValue), fmt.Errorf("could not get default value for %s on function %s: %s", argName, fnName, err)
+	}
+
+	values := strings.Split(strings.ReplaceAll(string(defaultValue), `"`, ""), ",")
+	return defaultValue == "" || slices.Contains(values, value), "", nil
 }

@@ -21,6 +21,9 @@ In a nutshell, `pocketci` moves the dispatching logic from your workflow YAMLs t
 export GITHUB_USERNAME=<YOUR GITHUB USERNAME>
 export GITHUB_TOKEN=<YOUR PAT OR FINE GRAINED TOKEN>
 export X_HUB_SIGNATURE=<SECRET SIGNATURE CONFIGURED FOR WEBHOOKS>
+
+# OPTIONAL: if you have a dagger cloud account and want traces to get there
+export DAGGER_CLOUD_TOKEN=<your token>
 ```
 
 With that configured you can then simply:
@@ -181,14 +184,15 @@ func (m *Ci) TestOnGithubPullRequest(ctx context.Context,
 }
 ```
 
-Upon receiving the event for a pull request pocketci will match this function because of the name and will then look for the `onChanges` parameter. If specified it will compare the list of files that changed in the PR with the glob patterns specified as a default value. If everything matches, it will make the dagger call and the value of `onChanges` will be the list of files that changed.
+Upon receiving the event for a pull request pocketci will match this function (because of the name) and will then look for the `onChanges` parameter. If specified it will compare the list of files that changed in the PR with the glob patterns specified as a default value. If everything matches, it will make the dagger call and the value of `onChanges` will be the list of files that changed.
 
-I'm going play with this idea. We can also apply it to the event triggering logic (not yet implemented):
+This same logic can also be applied to the event triggering logic:
 ```go
 func (m *Ci) TestOnGithubPullRequest(ctx context.Context,
 	// +optional
 	// +default="**/**.go,go.*"
 	onChanges string,
+    // Specify the list of values here instead of adding the if yourself
     // +default="synchronize,opened,reopened"
 	filter string,
 	src *dagger.Directory,
@@ -199,7 +203,7 @@ func (m *Ci) TestOnGithubPullRequest(ctx context.Context,
 }
 ```
 
-This way we don't need to add the if condition ourselves. The nice thing is that if we wanted to we had the option. Not yet implemented because I'm still playing with some of these ideas.
+This way we don't need to add if condition ourselves, however if you prefer to add the if you still can. Much like all of pocketci, this is still experimental. We continue to play with the idea of self contained functions.
 
 ### `Dispatch` interface
 

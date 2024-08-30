@@ -3,21 +3,17 @@ package main
 import (
 	"context"
 	"dagger/ci/internal/dagger"
-	"slices"
 )
 
 func (m *Ci) TestOnGithubPullRequest(ctx context.Context,
 	// +optional
 	// +default="**/**.go,go.*"
 	onChanges string,
+	// +default="synchronize,opened,reopened"
 	filter string,
 	src *dagger.Directory,
 	eventTrigger *dagger.File,
 	ghUsername, ghPassword *dagger.Secret) error {
-	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
-		return nil
-	}
-
 	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
 	return err
 }
@@ -26,22 +22,21 @@ func (m *Ci) LintOnGithubPullRequest(ctx context.Context,
 	// +optional
 	// +default="**/**.go,go.*"
 	onChanges string,
+	// +default="synchronize,opened,reopened"
 	filter string,
 	src *dagger.Directory,
 	eventTrigger *dagger.File,
 	ghUsername, ghPassword *dagger.Secret) error {
-	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
-		return nil
-	}
-
 	_, err := m.Lint(ctx, src).Stdout(ctx)
 	return err
 }
 
-func (m *Ci) PublishOnGithubPushMain(ctx context.Context,
+func (m *Ci) PublishOnGithubPush(ctx context.Context,
 	// +optional
 	// +default="**/**.go,go.*"
 	onChanges string,
+	// +default="main"
+	filter string,
 	src *dagger.Directory,
 	eventTrigger *dagger.File,
 	ghUsername, ghPassword *dagger.Secret) error {
