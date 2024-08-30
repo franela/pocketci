@@ -19,9 +19,7 @@ import (
 const GithubEventTypeHeader = "X-Github-Event"
 
 type Server struct {
-	agent *Agent
-
-	githubSecret    *dagger.Secret
+	orchestrator    *Orchestrator
 	githubSignature string
 }
 
@@ -41,12 +39,15 @@ func NewServer(dag *dagger.Client, opts ServerOptions) (*Server, error) {
 	}
 
 	s := &Server{
-		agent: NewAgent(dag),
-	}
-
-	if opts.GithubPassword != "" {
-		s.githubSecret = s.agent.CreateGithubSecret(opts.GithubUsername, opts.GithubPassword)
-		s.githubSignature = opts.GithubSignature
+		orchestrator: &Orchestrator{
+			Dispatcher: &LocalDispatcher{
+				dag:         dag,
+				parallelism: 2,
+			},
+			dag:         dag,
+			GithubNetrc: dag.SetSecret("github_auth", fmt.Sprintf("machine github.com login %s password %s", opts.GithubUsername, opts.GithubPassword)),
+		},
+		githubSignature: opts.GithubSignature,
 	}
 
 	return s, nil
@@ -77,12 +78,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Body = io.NopCloser(bytes.NewBuffer(b))
 
 		go func() {
-			ghEvent := &GithubEvent{
+			wh := &Webhook{
+				Vendor:    GithubVendor,
 				EventType: r.Header.Get(GithubEventTypeHeader),
 				Payload:   json.RawMessage(b),
 			}
+
 			ctx := context.Background()
-			if err := s.agent.HandleGithub(ctx, s.githubSecret, ghEvent); err != nil {
+			if err := s.orchestrator.Handle(ctx, wh); err != nil {
 				slog.Error("failed to handle github request", slog.String("error", err.Error()))
 			}
 		}()
