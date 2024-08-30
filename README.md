@@ -137,7 +137,7 @@ func (m *Ci) OnGithubPushMain(ctx context.Context, src *dagger.Directory, eventT
 
 We could also specify a `OnGithubPush` and handle the `filter` like we did in `OnGithubPullRequest`. Or simply do `OnGithub` and handle each event ourselves. A less abstracted alternative would entail parsing the `eventTrigger` yourself (either by using the `pocketci` module or doing it by hand). It is JSON file with the data contained [here](pocketci/server.go#L21). It will contain some metadata added by `pocketci` and the payload sent by the VCS. This is available to cover the more edgy use cases.
 
-**But what if I want to run multiple dagger calls for a given event trigger?**
+**What if I want to run multiple separate dagger calls for a given event trigger?**
 
 In that case, you can specify your function trigger as a suffix and any name you like as a prefix. For example, if you want to run both `Lint` and `Test` on every pull request but on separate function calls you can define two functions for the same trigger and pocketci will call both in parallel:
 ```go
@@ -159,6 +159,47 @@ func (m *Ci) LintOnGithubPullRequest(ctx context.Context, filter string, src *da
 	return err
 }
 ```
+
+**What if I want my dagger calls to only run if a certain list of files changed?**
+
+I admit this is a bit of a hacky solution, but it lets me continue to play with the idea of "self contained" functions that define on the function itself how/why it should be triggered. Lets take pocketci as an example, we **only** want to run our tests on a pull request if go files changed. To achieve that, we add the `onChanges` field with a default value that has the list of glob patterns we want pocketci to check:
+```go
+func (m *Ci) TestOnGithubPullRequest(ctx context.Context,
+	// +optional
+	// +default="**/**.go,go.*"
+	onChanges string,
+	filter string,
+	src *dagger.Directory,
+	eventTrigger *dagger.File,
+	ghUsername, ghPassword *dagger.Secret) error {
+	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
+		return nil
+	}
+
+	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+	return err
+}
+```
+
+Upon receiving the event for a pull request pocketci will match this function because of the name and will then look for the `onChanges` parameter. If specified it will compare the list of files that changed in the PR with the glob patterns specified as a default value. If everything matches, it will make the dagger call and the value of `onChanges` will be the list of files that changed.
+
+I'm going play with this idea. We can also apply it to the event triggering logic (not yet implemented):
+```go
+func (m *Ci) TestOnGithubPullRequest(ctx context.Context,
+	// +optional
+	// +default="**/**.go,go.*"
+	onChanges string,
+    // +default="synchronize,opened,reopened"
+	filter string,
+	src *dagger.Directory,
+	eventTrigger *dagger.File,
+	ghUsername, ghPassword *dagger.Secret) error {
+	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
+	return err
+}
+```
+
+This way we don't need to add the if condition ourselves. The nice thing is that if we wanted to we had the option. Not yet implemented because I'm still playing with some of these ideas.
 
 ### `Dispatch` interface
 
