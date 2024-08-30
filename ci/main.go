@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"slices"
 
 	"dagger/ci/internal/dagger"
 )
@@ -19,35 +18,6 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, tag, username s
 	return m.BaseContainer(ctx, src).
 		WithRegistryAuth("ghcr.io", username, password).
 		Publish(ctx, "ghcr.io/franela/pocketci:"+tag)
-}
-
-func (m *Ci) TestOnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
-		return nil
-	}
-
-	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
-	return err
-}
-
-func (m *Ci) LintOnGithubPullRequest(ctx context.Context, filter string, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-	if !slices.Contains([]string{"synchronize", "opened", "reopened"}, filter) {
-		return nil
-	}
-
-	_, err := m.Lint(ctx, src).Stdout(ctx)
-	return err
-}
-
-func (m *Ci) OnGithubPushMain(ctx context.Context, src *dagger.Directory, eventTrigger *dagger.File, ghUsername, ghPassword *dagger.Secret) error {
-	sha, err := dag.Pocketci(eventTrigger).CommitPush().Sha(ctx)
-	if err != nil {
-		return err
-	}
-
-	username, _ := ghUsername.Plaintext(ctx)
-	_, err = m.Publish(ctx, src, sha, username, ghPassword)
-	return err
 }
 
 func (m *Ci) Test(ctx context.Context, src *dagger.Directory, ghUsername, ghPassword *dagger.Secret) *dagger.Container {
