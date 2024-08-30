@@ -44,7 +44,7 @@ type LocalDispatcher struct {
 }
 
 func (ld *LocalDispatcher) Dispatch(ctx context.Context, spec *Spec, functions []Function, event *Event) error {
-	payload, err := json.Marshal(event.Payload)
+	payload, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("could not marshal raw event payload: %s", err)
 	}
