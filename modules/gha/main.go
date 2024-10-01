@@ -139,30 +139,28 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Gha{}, nil
-	/*
-		ge, err := github.ParseWebHook(ev.EventType, ev.Payload)
-		if err != nil {
-			return nil, err
-		}
+	ge, err := github.ParseWebHook(ev.EventType, ev.Payload)
+	if err != nil {
+		return nil, err
+	}
 
-		switch event := ge.(type) {
-		case *github.PullRequestEvent:
-			return &Gha{GithubEvent: &GithubEvent{
-				EventType:      ev.EventType,
-				FilesChanged:   ev.FilesChanged,
-				RepositoryName: ev.RepositoryName,
-				Ref:            ev.Ref,
-				SHA:            ev.SHA,
-				BaseRef:        ev.BaseRef,
-				BaseSHA:        ev.BaseSHA,
-				PrNumber:       ev.PrNumber,
-				PullRequest:    fromGithubPullRequest(event),
-			}}, nil
-		default:
-			return nil, errors.New("unsupported event type")
+	switch event := ge.(type) {
+	case *github.PullRequestEvent:
+		return &Gha{GithubEvent: &GithubEvent{
+			EventType:      ev.EventType,
+			FilesChanged:   ev.FilesChanged,
+			RepositoryName: ev.RepositoryName,
+			Ref:            ev.Ref,
+			SHA:            ev.SHA,
+			BaseRef:        ev.BaseRef,
+			BaseSHA:        ev.BaseSHA,
+			PrNumber:       ev.PrNumber,
+			PullRequest:    fromGithubPullRequest(event),
+		}}, nil
+	default:
+		return nil, errors.New("unsupported event type")
 
-		}*/
+	}
 }
 
 type Pipeline struct {
