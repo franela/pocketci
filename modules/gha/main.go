@@ -33,15 +33,8 @@ type Gha struct {
 }
 
 type customEVent struct {
-	EventType      string          `json:"event_type"`
-	FilesChanged   []string        `json:"files_changed"`
-	RepositoryName string          `json:"repository_name"`
-	Ref            string          `json:"ref"`
-	SHA            string          `json:"sha"`
-	BaseRef        string          `json:"base_ref,omitempty"`
-	BaseSHA        string          `json:"base_sha,omitempty"`
-	PrNumber       int             `json:"pr_number,omitempty"`
-	Payload        json.RawMessage `json:"payload"`
+	Event
+	Payload json.RawMessage `json:"payload"`
 }
 
 type Event struct {
