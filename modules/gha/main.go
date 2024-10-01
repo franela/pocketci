@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"slices"
 
 	"github.com/bmatcuk/doublestar"
@@ -139,10 +138,10 @@ type Pipeline struct {
 }
 
 type PipelineRequest struct {
-	RunsOn string
-	Name   string
-	Exec   string
-	Event  *GithubEvent
+	RunsOn string       `json:"runs_on"`
+	Name   string       `json:"name"`
+	Exec   string       `json:"exec"`
+	Event  *GithubEvent `json:"event"`
 }
 
 type Action string
@@ -196,7 +195,8 @@ func (m *Pipeline) Call(ctx context.Context, exec string) error {
 		}); err != nil {
 			return err
 		}
-		res, err := http.Post(os.Getenv("_POCKETCI_CP_URL"), "application/json", buf)
+
+		res, err := http.Post("http://172.17.0.1:8080/pipelines", "application/json", buf)
 		if err != nil {
 			return err
 		}
