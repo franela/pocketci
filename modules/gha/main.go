@@ -31,16 +31,21 @@ type Gha struct {
 	GithubEvent *GithubEvent
 }
 
+type event struct {
+	*Event
+	Payload json.RawMessage `json:"payload"`
+}
+
 type Event struct {
-	Payload        json.RawMessage `json:"payload"`
-	EventType      string          `json:"event_type"`
-	FilesChanged   []string        `json:"files_changed"`
-	RepositoryName string          `json:"repository_name"`
-	Ref            string          `json:"ref"`
-	SHA            string          `json:"sha"`
-	BaseRef        string          `json:"base_ref,omitempty"`
-	BaseSHA        string          `json:"base_sha,omitempty"`
-	PrNumber       int             `json:"pr_number,omitempty"`
+	StringPayload  string   `json:"-"`
+	EventType      string   `json:"event_type"`
+	FilesChanged   []string `json:"files_changed"`
+	RepositoryName string   `json:"repository_name"`
+	Ref            string   `json:"ref"`
+	SHA            string   `json:"sha"`
+	BaseRef        string   `json:"base_ref,omitempty"`
+	BaseSHA        string   `json:"base_sha,omitempty"`
+	PrNumber       int      `json:"pr_number,omitempty"`
 }
 
 type GithubEvent struct {
@@ -110,7 +115,7 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 		return nil, err
 	}
 
-	ev := &Event{}
+	ev := &event{}
 	err = json.Unmarshal([]byte(contents), ev)
 	if err != nil {
 		return nil, err
@@ -120,10 +125,11 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 		return nil, err
 	}
 
+	ev.Event.StringPayload = string(ev.Payload)
 	switch event := ge.(type) {
 	case *github.PullRequestEvent:
 		return &Gha{GithubEvent: &GithubEvent{
-			Event:       ev,
+			Event:       ev.Event,
 			PullRequest: fromGithubPullRequest(event),
 		}}, nil
 	default:
@@ -143,7 +149,7 @@ type Pipeline struct {
 	OnPullRequest bool
 }
 
-type PipelineRequest struct {
+type pipelineRequest struct {
 	RunsOn         string          `json:"runs_on"`
 	Name           string          `json:"name"`
 	Exec           string          `json:"exec"`
@@ -204,7 +210,7 @@ func (m *Pipeline) Call(ctx context.Context, exec string) error {
 			return nil
 		}
 		buf := bytes.NewBuffer([]byte{})
-		if err := json.NewEncoder(buf).Encode(&PipelineRequest{
+		if err := json.NewEncoder(buf).Encode(&pipelineRequest{
 			RunsOn:         m.RunsOn,
 			Name:           m.Name,
 			Exec:           exec,
@@ -216,7 +222,7 @@ func (m *Pipeline) Call(ctx context.Context, exec string) error {
 			PrNumber:       m.Event.PrNumber,
 			Module:         m.Module,
 			EventType:      m.Event.EventType,
-			Payload:        m.Event.Payload,
+			Payload:        json.RawMessage([]byte(m.Event.StringPayload)),
 		}); err != nil {
 			return err
 		}
