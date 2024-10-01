@@ -20,7 +20,6 @@ import (
 	"dagger/gha/internal/dagger"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 
@@ -181,17 +180,14 @@ func (m *Pipeline) WithModule(path string) *Pipeline {
 }
 
 func (m *Pipeline) Call(ctx context.Context, exec string) error {
-	fmt.Println("entro")
 	switch {
 	// a pull request was received and requested
 	case m.Event.PullRequest != nil && m.OnPullRequest:
 		pr := m.Event.PullRequest
 		if len(m.Actions) != 0 && slices.Index(m.Actions, Action(pr.Action)) == -1 {
-			fmt.Println("salio actions")
 			return nil
 		}
 		if !Match(m.Event.FilesChanged, m.Changes...) {
-			fmt.Println("salio match")
 			return nil
 		}
 		buf := bytes.NewBuffer([]byte{})
@@ -207,12 +203,10 @@ func (m *Pipeline) Call(ctx context.Context, exec string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("AAAAAAAHHHHHHHHHHHH")
 		res.Body.Close()
 
 		return nil
 	default:
-		fmt.Println("AAAAAAAHHHHHHHHHHHH NONONONONO")
 		return errors.New("nop")
 	}
 }
