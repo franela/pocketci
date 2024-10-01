@@ -57,19 +57,18 @@ func NewServer(dag *dagger.Client, opts ServerOptions) (*Server, error) {
 }
 
 type PipelineRequest struct {
-	RunsOn         string          `json:"runs_on"`
-	Name           string          `json:"name"`
-	Exec           string          `json:"exec"`
-	RepositoryName string          `json:"repository_name"`
-	Ref            string          `json:"ref"`
-	SHA            string          `json:"sha"`
-	BaseRef        string          `json:"base_ref"`
-	BaseSHA        string          `json:"base_sha"`
-	PrNumber       int             `json:"pr_number"`
-	Module         string          `json:"module"`
-	Workdir        string          `json:"workdir"`
-	EventType      string          `json:"event_type"`
-	Payload        json.RawMessage `json:"payload"`
+	RunsOn         string `json:"runs_on"`
+	Name           string `json:"name"`
+	Exec           string `json:"exec"`
+	RepositoryName string `json:"repository_name"`
+	Ref            string `json:"ref"`
+	SHA            string `json:"sha"`
+	BaseRef        string `json:"base_ref"`
+	BaseSHA        string `json:"base_sha"`
+	PrNumber       int    `json:"pr_number"`
+	Module         string `json:"module"`
+	Workdir        string `json:"workdir"`
+	EventType      string `json:"event_type"`
 }
 
 func (s *Server) PipelineHandler(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +95,6 @@ func (s *Server) PipelineHandler(w http.ResponseWriter, r *http.Request) {
 			"GITHUB_SHA":        req.SHA,
 			"GITHUB_ACTIONS":    "true",
 			"GITHUB_EVENT_NAME": req.EventType,
-			"GITHUB_EVENT_PATH": "/raw-payload.json",
 		}
 		if req.BaseRef != "" {
 			vars["GITHUB_REF"] = "refs/pull/" + strconv.Itoa(req.PrNumber) + "/merge"
@@ -116,7 +114,6 @@ func (s *Server) PipelineHandler(w http.ResponseWriter, r *http.Request) {
 			WithDirectory("/"+req.RepositoryName, repo).
 			WithWorkdir("/"+req.RepositoryName).
 			WithEnvVariable("CI", "pocketci").
-			WithNewFile("/raw-payload.json", string(req.Payload)).
 			With(func(c *dagger.Container) *dagger.Container {
 				for key, val := range vars {
 					c = c.WithEnvVariable(key, val)
