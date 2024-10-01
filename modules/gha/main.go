@@ -110,6 +110,8 @@ type User struct {
 }
 
 func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
+	fmt.Println("ACAAAAAAA")
+
 	contents, err := eventSrc.Contents(ctx)
 	if err != nil {
 		return nil, err
