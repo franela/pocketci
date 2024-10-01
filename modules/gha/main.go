@@ -20,6 +20,7 @@ import (
 	"dagger/gha/internal/dagger"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 
@@ -113,6 +114,8 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println(contents)
 
 	ev := &event{Event: &Event{}}
 	err = json.Unmarshal([]byte(contents), ev)
