@@ -49,8 +49,15 @@ type Event struct {
 }
 
 type GithubEvent struct {
-	*Event
-	PullRequest *PullRequest
+	EventType      string   `json:"event_type"`
+	FilesChanged   []string `json:"files_changed"`
+	RepositoryName string   `json:"repository_name"`
+	Ref            string   `json:"ref"`
+	SHA            string   `json:"sha"`
+	BaseRef        string   `json:"base_ref,omitempty"`
+	BaseSHA        string   `json:"base_sha,omitempty"`
+	PrNumber       int      `json:"pr_number,omitempty"`
+	PullRequest    *PullRequest
 }
 
 type PullRequest struct {
@@ -112,7 +119,7 @@ type User struct {
 func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	fmt.Println("ACAAAAAAA")
 
-	/*contents, err := eventSrc.Contents(ctx)
+	contents, err := eventSrc.Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -133,14 +140,20 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	switch event := ge.(type) {
 	case *github.PullRequestEvent:
 		return &Gha{GithubEvent: &GithubEvent{
-			Event:       ev.Event,
-			PullRequest: fromGithubPullRequest(event),
+			EventType:      ev.Event.EventType,
+			FilesChanged:   ev.Event.FilesChanged,
+			RepositoryName: ev.Event.RepositoryName,
+			Ref:            ev.Event.Ref,
+			SHA:            ev.Event.SHA,
+			BaseRef:        ev.Event.BaseRef,
+			BaseSHA:        ev.Event.BaseSHA,
+			PrNumber:       ev.Event.PrNumber,
+			PullRequest:    fromGithubPullRequest(event),
 		}}, nil
 	default:
 		return nil, errors.New("unsupported event type")
 
-	}*/
-	return nil, nil
+	}
 }
 
 type Pipeline struct {
