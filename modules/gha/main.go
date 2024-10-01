@@ -115,7 +115,7 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 		return nil, err
 	}
 
-	ev := &event{}
+	ev := &event{Event: &Event{}}
 	err = json.Unmarshal([]byte(contents), ev)
 	if err != nil {
 		return nil, err
