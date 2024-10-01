@@ -32,7 +32,7 @@ type Gha struct {
 	GithubEvent *GithubEvent
 }
 
-type CustomEvent struct {
+type customEVent struct {
 	EventType      string          `json:"event_type"`
 	FilesChanged   []string        `json:"files_changed"`
 	RepositoryName string          `json:"repository_name"`
@@ -134,7 +134,7 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	fmt.Println("CONTEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEENTS")
 	fmt.Println(contents)
 
-	ev := &CustomEvent{}
+	ev := &customEVent{}
 	err = json.Unmarshal([]byte(contents), ev)
 	if err != nil {
 		return nil, err
