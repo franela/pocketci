@@ -115,6 +115,7 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 		return nil, err
 	}
 
+	fmt.Println("CONTEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEENTS")
 	fmt.Println(contents)
 
 	ev := &event{Event: &Event{}}
