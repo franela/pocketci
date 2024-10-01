@@ -16,7 +16,7 @@ import (
 type Event struct {
 	RepositoryName string            `json:"repository_name"`
 	Repository     *dagger.Directory `json:"-"`
-	Changes        []string          `json:"-"`
+	Changes        []string          `json:"files_changed"`
 	Payload        json.RawMessage   `json:"payload"`
 
 	Vendor    string `json:"vendor"`
@@ -51,6 +51,10 @@ func (ld *LocalDispatcher) Dispatch(ctx context.Context, spec *Spec, functions [
 		return fmt.Errorf("could not marshal raw event payload: %s", err)
 	}
 
+	api := ld.dag.Host().Service([]dagger.PortForward{
+		{Backend: 8080, Frontend: 8080, Protocol: dagger.Tcp},
+	}, dagger.HostServiceOpts{Host: "localhost"})
+
 	var g errgroup.Group
 	g.SetLimit(ld.parallelism)
 	for _, fn := range functions {
@@ -60,8 +64,10 @@ func (ld *LocalDispatcher) Dispatch(ctx context.Context, spec *Spec, functions [
 					slog.String("repository", event.RepositoryName), slog.String("function", fn.Name),
 					slog.String("event_type", event.EventType), slog.String("filter", event.Filter))
 
-				call := fmt.Sprintf("dagger call -m %s --progress plain %s %s --src . --event-trigger /payload.json", spec.ModulePath, fn.Name, fn.Args)
+				call := fmt.Sprintf("dagger call -m %s --progress plain %s %s --event-trigger /payload.json", spec.ModulePath, fn.Name, fn.Args)
 				stdout, err := AgentContainer(ld.dag).
+					WithServiceBinding("pocketci", api).
+					WithEnvVariable("_POCKETCI_CP_URL", "http://pocketci:8080/pipelines").
 					WithEnvVariable("CACHE_BUST", time.Now().String()).
 					WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
 					WithDirectory("/"+event.RepositoryName, event.Repository).

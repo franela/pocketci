@@ -19,7 +19,7 @@ import (
 const (
 	GithubVendor = "github"
 
-	DaggerVersion = "0.12.5"
+	DaggerVersion = "0.13.3"
 )
 
 type Orchestrator struct {
@@ -61,17 +61,17 @@ func (o *Orchestrator) HandleGithub(ctx context.Context, wh *Webhook) error {
 		spec = &Spec{ModulePath: "./ci"}
 	}
 
-	functions, err := matchFunctions(ctx, GithubVendor, event.EventType, event.Filter, event.Changes, event.Repository.Directory(spec.ModulePath).AsModule().Initialize())
-	if err != nil {
-		return fmt.Errorf("failed to get dispatcher function: %s", err)
-	}
+	//functions, err := matchFunctions(ctx, GithubVendor, event.EventType, event.Filter, event.Changes, event.Repository.Directory(spec.ModulePath).AsModule().Initialize())
+	//if err != nil {
+	//	return fmt.Errorf("failed to get dispatcher function: %s", err)
+	//}
 
-	if len(functions) == 0 {
-		slog.Info("event did not match any functions", slog.String("repository", event.RepositoryName), slog.String("event", event.EventType), slog.String("vendor", GithubVendor), slog.String("filter", event.Filter))
-		return nil
-	}
+	//if len(functions) == 0 {
+	//	slog.Info("event did not match any functions", slog.String("repository", event.RepositoryName), slog.String("event", event.EventType), slog.String("vendor", GithubVendor), slog.String("filter", event.Filter))
+	//	return nil
+	//}
 
-	return o.Dispatcher.Dispatch(ctx, spec, functions, &Event{
+	return o.Dispatcher.Dispatch(ctx, spec, []Function{{Name: "dispatch"}}, &Event{
 		RepositoryName: event.EventType,
 		Repository:     event.Repository,
 		Changes:        event.Changes,
