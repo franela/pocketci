@@ -112,7 +112,7 @@ type User struct {
 func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	fmt.Println("ACAAAAAAA")
 
-	contents, err := eventSrc.Contents(ctx)
+	/*contents, err := eventSrc.Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +139,8 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	default:
 		return nil, errors.New("unsupported event type")
 
-	}
-
+	}*/
+	return nil, nil
 }
 
 type Pipeline struct {
