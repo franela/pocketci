@@ -32,14 +32,20 @@ type Gha struct {
 }
 
 type Event struct {
-	Payload      json.RawMessage `json:"payload"`
-	EventType    string          `json:"event_type"`
-	FilesChanged []string        `json:"files_changed"`
+	Payload        json.RawMessage `json:"payload"`
+	EventType      string          `json:"event_type"`
+	FilesChanged   []string        `json:"files_changed"`
+	RepositoryName string          `json:"repository_name"`
+	Ref            string          `json:"ref"`
+	SHA            string          `json:"sha"`
+	BaseRef        string          `json:"base_ref,omitempty"`
+	BaseSHA        string          `json:"base_sha,omitempty"`
+	PrNumber       int             `json:"pr_number,omitempty"`
 }
 
 type GithubEvent struct {
-	FilesChanged []string
-	PullRequest  *PullRequest
+	*Event
+	PullRequest *PullRequest
 }
 
 type PullRequest struct {
@@ -117,8 +123,8 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	switch event := ge.(type) {
 	case *github.PullRequestEvent:
 		return &Gha{GithubEvent: &GithubEvent{
-			FilesChanged: ev.FilesChanged,
-			PullRequest:  fromGithubPullRequest(event),
+			Event:       ev,
+			PullRequest: fromGithubPullRequest(event),
 		}}, nil
 	default:
 		return nil, errors.New("unsupported event type")
@@ -138,11 +144,18 @@ type Pipeline struct {
 }
 
 type PipelineRequest struct {
-	RunsOn string       `json:"runs_on"`
-	Name   string       `json:"name"`
-	Exec   string       `json:"exec"`
-	Module string       `json:"module"`
-	Event  *GithubEvent `json:"event"`
+	RunsOn         string          `json:"runs_on"`
+	Name           string          `json:"name"`
+	Exec           string          `json:"exec"`
+	RepositoryName string          `json:"repository_name"`
+	Ref            string          `json:"ref"`
+	SHA            string          `json:"sha"`
+	BaseRef        string          `json:"base_ref"`
+	BaseSHA        string          `json:"base_sha"`
+	PrNumber       int             `json:"pr_number"`
+	Module         string          `json:"module"`
+	EventType      string          `json:"event_type"`
+	Payload        json.RawMessage `json:"payload"`
 }
 
 type Action string
@@ -192,9 +205,18 @@ func (m *Pipeline) Call(ctx context.Context, exec string) error {
 		}
 		buf := bytes.NewBuffer([]byte{})
 		if err := json.NewEncoder(buf).Encode(&PipelineRequest{
-			RunsOn: m.RunsOn,
-			Name:   m.Name,
-			Event:  m.Event,
+			RunsOn:         m.RunsOn,
+			Name:           m.Name,
+			Exec:           exec,
+			RepositoryName: m.Event.RepositoryName,
+			Ref:            m.Event.Ref,
+			SHA:            m.Event.SHA,
+			BaseRef:        m.Event.BaseRef,
+			BaseSHA:        m.Event.BaseSHA,
+			PrNumber:       m.Event.PrNumber,
+			Module:         m.Module,
+			EventType:      m.Event.EventType,
+			Payload:        m.Event.Payload,
 		}); err != nil {
 			return err
 		}
