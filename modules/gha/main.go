@@ -15,25 +15,33 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"dagger/gha/internal/dagger"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"os"
+	"slices"
 
+	"github.com/bmatcuk/doublestar"
 	"github.com/google/go-github/v61/github"
 )
 
 type Gha struct {
-	PullRequest *PullRequest
-}
-
-type Payload struct {
+	GithubEvent *GithubEvent
 }
 
 type Event struct {
-	Payload   dagger.JSON
-	EventType string
+	Payload      json.RawMessage `json:"payload"`
+	EventType    string          `json:"event_type"`
+	FilesChanged []string        `json:"files_changed"`
+}
+
+type GithubEvent struct {
+	FilesChanged []string
+	PullRequest  *PullRequest
 }
 
 type PullRequest struct {
@@ -103,14 +111,17 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	if err != nil {
 		return nil, err
 	}
-	ge, err := github.ParseWebHook(ev.EventType, []byte(ev.Payload))
+	ge, err := github.ParseWebHook(ev.EventType, ev.Payload)
 	if err != nil {
 		return nil, err
 	}
 
 	switch event := ge.(type) {
 	case *github.PullRequestEvent:
-		return &Gha{PullRequest: fromGithubPullRequest(event)}, nil
+		return &Gha{GithubEvent: &GithubEvent{
+			FilesChanged: ev.FilesChanged,
+			PullRequest:  fromGithubPullRequest(event),
+		}}, nil
 	default:
 		return nil, errors.New("unsupported event type")
 
@@ -119,17 +130,19 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 }
 
 type Pipeline struct {
-	RunsOn  string
-	Changes []string
-	Name    string
-	Event   *PullRequest
-	Actions []Action
+	RunsOn        string
+	Changes       []string
+	Name          string
+	Event         *GithubEvent
+	Actions       []Action
+	OnPullRequest bool
 }
 
 type PipelineRequest struct {
 	RunsOn string
 	Name   string
-	Event  *PullRequest
+	Exec   string
+	Event  *GithubEvent
 }
 
 type Action string
@@ -142,7 +155,7 @@ const (
 
 // Returns a container that echoes whatever string argument is provided
 func (m *Gha) WithPipeline(name string) *Pipeline {
-	return &Pipeline{Name: name, Event: m.PullRequest}
+	return &Pipeline{Name: name, Event: m.GithubEvent}
 }
 
 func (m *Pipeline) WithRunsOn(name string) *Pipeline {
@@ -152,6 +165,7 @@ func (m *Pipeline) WithRunsOn(name string) *Pipeline {
 
 func (m *Pipeline) WithOnPullRequest(actions ...Action) *Pipeline {
 	m.Actions = actions
+	m.OnPullRequest = true
 	return m
 }
 
@@ -160,14 +174,40 @@ func (m *Pipeline) WithOnChanges(paths ...string) *Pipeline {
 	return m
 }
 
-func (m *Pipeline) Call(ctx context.Context, exec string) {
+func (m *Pipeline) Call(ctx context.Context, exec string) error {
+	fmt.Println("entro")
+	switch {
+	// a pull request was received and requested
+	case m.Event.PullRequest != nil && m.OnPullRequest:
+		pr := m.Event.PullRequest
+		if len(m.Actions) != 0 && slices.Index(m.Actions, Action(pr.Action)) == -1 {
+			fmt.Println("salio actions")
+			return nil
+		}
+		if !Match(m.Event.FilesChanged, m.Changes...) {
+			fmt.Println("salio match")
+			return nil
+		}
+		buf := bytes.NewBuffer([]byte{})
+		if err := json.NewEncoder(buf).Encode(&PipelineRequest{
+			RunsOn: m.RunsOn,
+			Name:   m.Name,
+			Event:  m.Event,
+		}); err != nil {
+			return err
+		}
+		res, err := http.Post(os.Getenv("_POCKETCI_CP_URL"), "application/json", buf)
+		if err != nil {
+			return err
+		}
+		fmt.Println("AAAAAAAHHHHHHHHHHHH")
+		res.Body.Close()
 
-	if m.Event == nil {
-		return
-
+		return nil
+	default:
+		fmt.Println("AAAAAAAHHHHHHHHHHHH NONONONONO")
+		return errors.New("nop")
 	}
-
-	fmt.Println(exec)
 }
 
 func fromGithubPullRequest(e *github.PullRequestEvent) *PullRequest {
@@ -273,4 +313,20 @@ func fromGithubPullRequest(e *github.PullRequestEvent) *PullRequest {
 	}
 
 	return pr
+}
+
+func Match(files []string, patterns ...string) bool {
+	fmt.Printf("%+v - %+v", files, patterns)
+	for _, file := range files {
+		for _, pattern := range patterns {
+			match, err := doublestar.PathMatch(pattern, file)
+			if err != nil {
+				continue
+			}
+			if match {
+				return true
+			}
+		}
+	}
+	return false
 }
