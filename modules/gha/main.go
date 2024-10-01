@@ -37,7 +37,6 @@ type event struct {
 }
 
 type Event struct {
-	StringPayload  string   `json:"-"`
 	EventType      string   `json:"event_type"`
 	FilesChanged   []string `json:"files_changed"`
 	RepositoryName string   `json:"repository_name"`
@@ -125,7 +124,6 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 		return nil, err
 	}
 
-	ev.Event.StringPayload = string(ev.Payload)
 	switch event := ge.(type) {
 	case *github.PullRequestEvent:
 		return &Gha{GithubEvent: &GithubEvent{
@@ -150,18 +148,17 @@ type Pipeline struct {
 }
 
 type pipelineRequest struct {
-	RunsOn         string          `json:"runs_on"`
-	Name           string          `json:"name"`
-	Exec           string          `json:"exec"`
-	RepositoryName string          `json:"repository_name"`
-	Ref            string          `json:"ref"`
-	SHA            string          `json:"sha"`
-	BaseRef        string          `json:"base_ref"`
-	BaseSHA        string          `json:"base_sha"`
-	PrNumber       int             `json:"pr_number"`
-	Module         string          `json:"module"`
-	EventType      string          `json:"event_type"`
-	Payload        json.RawMessage `json:"payload"`
+	RunsOn         string `json:"runs_on"`
+	Name           string `json:"name"`
+	Exec           string `json:"exec"`
+	RepositoryName string `json:"repository_name"`
+	Ref            string `json:"ref"`
+	SHA            string `json:"sha"`
+	BaseRef        string `json:"base_ref"`
+	BaseSHA        string `json:"base_sha"`
+	PrNumber       int    `json:"pr_number"`
+	Module         string `json:"module"`
+	EventType      string `json:"event_type"`
 }
 
 type Action string
@@ -222,7 +219,6 @@ func (m *Pipeline) Call(ctx context.Context, exec string) error {
 			PrNumber:       m.Event.PrNumber,
 			Module:         m.Module,
 			EventType:      m.Event.EventType,
-			Payload:        json.RawMessage([]byte(m.Event.StringPayload)),
 		}); err != nil {
 			return err
 		}
