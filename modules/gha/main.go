@@ -131,6 +131,7 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 type Pipeline struct {
 	RunsOn        string
 	Changes       []string
+	Module        string
 	Name          string
 	Event         *GithubEvent
 	Actions       []Action
@@ -141,6 +142,7 @@ type PipelineRequest struct {
 	RunsOn string       `json:"runs_on"`
 	Name   string       `json:"name"`
 	Exec   string       `json:"exec"`
+	Module string       `json:"module"`
 	Event  *GithubEvent `json:"event"`
 }
 
@@ -170,6 +172,11 @@ func (m *Pipeline) WithOnPullRequest(actions ...Action) *Pipeline {
 
 func (m *Pipeline) WithOnChanges(paths ...string) *Pipeline {
 	m.Changes = paths
+	return m
+}
+
+func (m *Pipeline) WithModule(path string) *Pipeline {
+	m.Module = path
 	return m
 }
 
@@ -316,7 +323,6 @@ func fromGithubPullRequest(e *github.PullRequestEvent) *PullRequest {
 }
 
 func Match(files []string, patterns ...string) bool {
-	fmt.Printf("%+v - %+v", files, patterns)
 	for _, file := range files {
 		for _, pattern := range patterns {
 			match, err := doublestar.PathMatch(pattern, file)
