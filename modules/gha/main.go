@@ -33,8 +33,15 @@ type Gha struct {
 }
 
 type event struct {
-	*Event
-	Payload json.RawMessage `json:"payload"`
+	EventType      string          `json:"event_type"`
+	FilesChanged   []string        `json:"files_changed"`
+	RepositoryName string          `json:"repository_name"`
+	Ref            string          `json:"ref"`
+	SHA            string          `json:"sha"`
+	BaseRef        string          `json:"base_ref,omitempty"`
+	BaseSHA        string          `json:"base_sha,omitempty"`
+	PrNumber       int             `json:"pr_number,omitempty"`
+	Payload        json.RawMessage `json:"payload"`
 }
 
 type Event struct {
@@ -127,7 +134,7 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	fmt.Println("CONTEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEENTS")
 	fmt.Println(contents)
 
-	ev := &event{Event: &Event{}}
+	ev := &event{}
 	err = json.Unmarshal([]byte(contents), ev)
 	if err != nil {
 		return nil, err
@@ -140,14 +147,14 @@ func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
 	switch event := ge.(type) {
 	case *github.PullRequestEvent:
 		return &Gha{GithubEvent: &GithubEvent{
-			EventType:      ev.Event.EventType,
-			FilesChanged:   ev.Event.FilesChanged,
-			RepositoryName: ev.Event.RepositoryName,
-			Ref:            ev.Event.Ref,
-			SHA:            ev.Event.SHA,
-			BaseRef:        ev.Event.BaseRef,
-			BaseSHA:        ev.Event.BaseSHA,
-			PrNumber:       ev.Event.PrNumber,
+			EventType:      ev.EventType,
+			FilesChanged:   ev.FilesChanged,
+			RepositoryName: ev.RepositoryName,
+			Ref:            ev.Ref,
+			SHA:            ev.SHA,
+			BaseRef:        ev.BaseRef,
+			BaseSHA:        ev.BaseSHA,
+			PrNumber:       ev.PrNumber,
 			PullRequest:    fromGithubPullRequest(event),
 		}}, nil
 	default:
