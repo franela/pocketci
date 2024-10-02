@@ -20,7 +20,6 @@ import (
 	"dagger/gha/internal/dagger"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 
@@ -32,7 +31,7 @@ type Gha struct {
 	GithubEvent *GithubEvent
 }
 
-type customEVent struct {
+type event struct {
 	Event
 	Payload json.RawMessage `json:"payload"`
 }
@@ -117,17 +116,12 @@ type User struct {
 }
 
 func New(ctx context.Context, eventSrc *dagger.File) (*Gha, error) {
-	fmt.Println("ACAAAAAAA")
-
 	contents, err := eventSrc.Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("CONTEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEENTS")
-	fmt.Println(contents)
-
-	ev := &customEVent{}
+	ev := &event{}
 	err = json.Unmarshal([]byte(contents), ev)
 	if err != nil {
 		return nil, err
