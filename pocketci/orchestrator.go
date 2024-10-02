@@ -72,13 +72,16 @@ func (o *Orchestrator) HandleGithub(ctx context.Context, wh *Webhook) error {
 	//}
 
 	return o.Dispatcher.Dispatch(ctx, spec, []Function{{Name: "dispatch"}}, &Event{
-		RepositoryName: event.EventType,
+		RepositoryName: event.RepositoryName,
+		Ref:            event.Ref,
+		SHA:            event.SHA,
+		BaseRef:        event.BaseRef,
+		BaseSHA:        event.BaseSHA,
+		PrNumber:       event.PrNumber,
 		Repository:     event.Repository,
 		Changes:        event.Changes,
 		Payload:        wh.Payload,
-		Vendor:         GithubVendor,
 		EventType:      wh.EventType,
-		Filter:         event.Filter,
 		EnvVariables:   event.Variables,
 	})
 }

@@ -14,14 +14,18 @@ import (
 )
 
 type Event struct {
-	RepositoryName string            `json:"repository_name"`
-	Repository     *dagger.Directory `json:"-"`
-	Changes        []string          `json:"files_changed"`
-	Payload        json.RawMessage   `json:"payload"`
+	RepositoryName string `json:"repository_name"`
+	Ref            string `json:"ref"`
+	SHA            string `json:"sha"`
+	BaseRef        string `json:"base_ref,omitempty"`
+	BaseSHA        string `json:"base_sha,omitempty"`
+	PrNumber       int    `json:"pr_number,omitempty"`
 
-	Vendor    string `json:"vendor"`
+	Repository *dagger.Directory `json:"-"`
+	Changes    []string          `json:"files_changed"`
+	Payload    json.RawMessage   `json:"payload"`
+
 	EventType string `json:"event_type"`
-	Filter    string `json:"filter"`
 
 	EnvVariables map[string]string `json:"-"`
 }
@@ -62,9 +66,9 @@ func (ld *LocalDispatcher) Dispatch(ctx context.Context, spec *Spec, functions [
 			return func() error {
 				slog.Info("launching pocketci agent container dispatch call",
 					slog.String("repository", event.RepositoryName), slog.String("function", fn.Name),
-					slog.String("event_type", event.EventType), slog.String("filter", event.Filter))
+					slog.String("event_type", event.EventType))
 
-				call := fmt.Sprintf("dagger call -m %s --progress plain %s %s --event-trigger /payload.json", spec.ModulePath, fn.Name, fn.Args)
+				call := fmt.Sprintf("dagger call -vvv -m %s --progress plain %s %s --event-trigger /payload.json", spec.ModulePath, fn.Name, fn.Args)
 				stdout, err := AgentContainer(ld.dag).
 					WithServiceBinding("pocketci", api).
 					WithEnvVariable("_POCKETCI_CP_URL", "http://pocketci:8080/pipelines").

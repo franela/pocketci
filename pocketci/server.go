@@ -81,13 +81,23 @@ func (s *Server) PipelineHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 
 	go func() {
+		ctx := context.Background()
 
-		ct := BaseContainer(s.orchestrator.dag).
+		repoUrl := "https://github.com/" + req.RepositoryName
+		slog.Info("cloning repository", slog.String("repository", repoUrl),
+			slog.String("ref", req.Ref), slog.String("sha", req.SHA))
+
+		repo, err := BaseContainer(s.orchestrator.dag).
 			WithEnvVariable("CACHE_BUST", time.Now().String()).
-			WithMountedSecret("/root/.netrc", s.orchestrator.GithubNetrc)
-		repo, _, err := cloneAndDiff(r.Context(), ct, "https://github.com/"+req.RepositoryName, req.Ref, req.SHA, req.BaseRef, req.BaseSHA)
+			WithMountedSecret("/root/.netrc", s.orchestrator.GithubNetrc).
+			WithExec([]string{"git", "clone", "--single-branch", "--branch", req.Ref, "--depth", "1", repoUrl, "/app"}).
+			WithWorkdir("/app").
+			WithExec([]string{"git", "checkout", req.SHA}).
+			Directory("/app").
+			Sync(ctx)
 		if err != nil {
-			http.Error(w, fmt.Errorf("could not clond and diff repository: %s", err).Error(), http.StatusInternalServerError)
+			slog.Error("failed to clonse github repository", slog.String("error", err.Error()),
+				slog.String("repository", repoUrl), slog.String("ref", req.Ref), slog.String("sha", req.SHA))
 			return
 		}
 
@@ -123,9 +133,8 @@ func (s *Server) PipelineHandler(w http.ResponseWriter, r *http.Request) {
 					ExperimentalPrivilegedNesting: true,
 				})
 			}).
-			Stdout(r.Context())
+			Stdout(ctx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		fmt.Println(stdout)
