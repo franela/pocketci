@@ -61,15 +61,9 @@ func (o *Orchestrator) HandleGithub(ctx context.Context, wh *Webhook) error {
 		spec = &Spec{ModulePath: "./ci"}
 	}
 
-	//functions, err := matchFunctions(ctx, GithubVendor, event.EventType, event.Filter, event.Changes, event.Repository.Directory(spec.ModulePath).AsModule().Initialize())
-	//if err != nil {
-	//	return fmt.Errorf("failed to get dispatcher function: %s", err)
-	//}
-
-	//if len(functions) == 0 {
-	//	slog.Info("event did not match any functions", slog.String("repository", event.RepositoryName), slog.String("event", event.EventType), slog.String("vendor", GithubVendor), slog.String("filter", event.Filter))
-	//	return nil
-	//}
+	if err := hasDispatch(ctx, event.Repository.Directory(spec.ModulePath).AsModule().Initialize()); err != nil {
+		return err
+	}
 
 	return o.Dispatcher.Dispatch(ctx, spec, []Function{{Name: "dispatch"}}, &Event{
 		RepositoryName: event.RepositoryName,

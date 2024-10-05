@@ -11,10 +11,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
-	"time"
+	"sync"
 
 	"dagger.io/dagger"
 )
@@ -24,6 +22,9 @@ const GithubEventTypeHeader = "X-Github-Event"
 type Server struct {
 	orchestrator    *Orchestrator
 	githubSignature string
+
+	mu        sync.Mutex
+	pipelines []*CreatePipelineRequest
 }
 
 // TODO: move away into a proper `Config` structure for the server
@@ -51,95 +52,10 @@ func NewServer(dag *dagger.Client, opts ServerOptions) (*Server, error) {
 			GithubNetrc: dag.SetSecret("github_auth", fmt.Sprintf("machine github.com login %s password %s", opts.GithubUsername, opts.GithubPassword)),
 		},
 		githubSignature: opts.GithubSignature,
+		pipelines:       []*CreatePipelineRequest{},
 	}
 
 	return s, nil
-}
-
-type PipelineRequest struct {
-	RunsOn         string `json:"runs_on"`
-	Name           string `json:"name"`
-	Exec           string `json:"exec"`
-	RepositoryName string `json:"repository_name"`
-	Ref            string `json:"ref"`
-	SHA            string `json:"sha"`
-	BaseRef        string `json:"base_ref"`
-	BaseSHA        string `json:"base_sha"`
-	PrNumber       int    `json:"pr_number"`
-	Module         string `json:"module"`
-	Workdir        string `json:"workdir"`
-	EventType      string `json:"event_type"`
-}
-
-func (s *Server) PipelineHandler(w http.ResponseWriter, r *http.Request) {
-	req := &PipelineRequest{}
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-
-	go func() {
-		ctx := context.Background()
-
-		repoUrl := "https://github.com/" + req.RepositoryName
-		slog.Info("cloning repository", slog.String("repository", repoUrl),
-			slog.String("ref", req.Ref), slog.String("sha", req.SHA))
-
-		repo, err := BaseContainer(s.orchestrator.dag).
-			WithEnvVariable("CACHE_BUST", time.Now().String()).
-			WithMountedSecret("/root/.netrc", s.orchestrator.GithubNetrc).
-			WithExec([]string{"git", "clone", "--single-branch", "--branch", req.Ref, "--depth", "1", repoUrl, "/app"}).
-			WithWorkdir("/app").
-			WithExec([]string{"git", "checkout", req.SHA}).
-			Directory("/app").
-			Sync(ctx)
-		if err != nil {
-			slog.Error("failed to clonse github repository", slog.String("error", err.Error()),
-				slog.String("repository", repoUrl), slog.String("ref", req.Ref), slog.String("sha", req.SHA))
-			return
-		}
-
-		vars := map[string]string{
-			"GITHUB_SHA":        req.SHA,
-			"GITHUB_ACTIONS":    "true",
-			"GITHUB_EVENT_NAME": req.EventType,
-		}
-		if req.BaseRef != "" {
-			vars["GITHUB_REF"] = "refs/pull/" + strconv.Itoa(req.PrNumber) + "/merge"
-		}
-
-		slog.Info("launching pocketci agent container",
-			slog.String("repository_name", req.RepositoryName), slog.String("pipeline", req.Name),
-			slog.String("ref", req.Ref), slog.String("base_ref", req.BaseRef),
-			slog.String("sha", req.SHA), slog.String("base_sha", req.BaseSHA),
-			slog.String("module", req.Module), slog.String("workdir", req.Workdir),
-			slog.String("exec", req.Exec), slog.String("runs_on", req.RunsOn))
-
-		call := fmt.Sprintf("dagger call -m %s --progress plain %s", req.Module, req.Exec)
-		stdout, err := AgentContainer(s.orchestrator.dag).
-			WithEnvVariable("CACHE_BUST", time.Now().String()).
-			WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
-			WithDirectory("/"+req.RepositoryName, repo).
-			WithWorkdir("/"+req.RepositoryName).
-			WithEnvVariable("CI", "pocketci").
-			With(func(c *dagger.Container) *dagger.Container {
-				for key, val := range vars {
-					c = c.WithEnvVariable(key, val)
-				}
-				script := fmt.Sprintf("unset TRACEPARENT;unset OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:38015;unset OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:38015/v1/traces;unset OTEL_EXPORTER_OTLP_TRACES_LIVE=1;unset OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:38015/v1/logs;unset OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:38015/v1/metrics; %s", call)
-				return c.WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{
-					ExperimentalPrivilegedNesting: true,
-				})
-			}).
-			Stdout(ctx)
-		if err != nil {
-			return
-		}
-		fmt.Println(stdout)
-	}()
-
 }
 
 // TODO: generalize this code to support other VCS and event matchers in general

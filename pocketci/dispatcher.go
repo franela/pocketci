@@ -13,23 +13,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Event struct {
-	RepositoryName string `json:"repository_name"`
-	Ref            string `json:"ref"`
-	SHA            string `json:"sha"`
-	BaseRef        string `json:"base_ref,omitempty"`
-	BaseSHA        string `json:"base_sha,omitempty"`
-	PrNumber       int    `json:"pr_number,omitempty"`
-
-	Repository *dagger.Directory `json:"-"`
-	Changes    []string          `json:"files_changed"`
-	Payload    json.RawMessage   `json:"payload"`
-
-	EventType string `json:"event_type"`
-
-	EnvVariables map[string]string `json:"-"`
-}
-
 // Dispatcher receives a list of functions and is in charge of making sure
 // each function call happens at most once. Whether they happen sync or async
 // is up to the implementation.

@@ -19,6 +19,54 @@ type Function struct {
 	Args string
 }
 
+func hasDispatch(ctx context.Context, mod *dagger.Module) error {
+	modName, err := mod.Name(ctx)
+	if err != nil {
+		return fmt.Errorf("could not get module name: %s", err)
+	}
+	modName = strcase.ToLowerCamel(modName)
+
+	objects, err := mod.Objects(ctx)
+	if err != nil {
+		return fmt.Errorf("could not list module objects: %s", err)
+	}
+
+	for _, obj := range objects {
+		object := obj.AsObject()
+		if object == nil {
+			continue
+		}
+
+		objName, err := object.Name(ctx)
+		if err != nil {
+			continue
+		}
+
+		objName = strcase.ToLowerCamel(objName)
+		if objName != modName {
+			continue
+		}
+
+		funcs, err := object.Functions(ctx)
+		if err != nil {
+			return fmt.Errorf("could not list functions from object %s: %s", objName, err)
+		}
+
+		for _, fn := range funcs {
+			fnName, err := fn.Name(ctx)
+			if err != nil {
+				return fmt.Errorf("could not get function name for object %s: %s", objName, err)
+			}
+
+			if fnName == "dispatch" {
+				return nil
+			}
+		}
+	}
+
+	return ErrNoFunctionsMatched
+}
+
 func matchFunctions(ctx context.Context, vendor, eventType, filter string, changes []string, mod *dagger.Module) ([]Function, error) {
 	modName, err := mod.Name(ctx)
 	if err != nil {
