@@ -49,6 +49,56 @@ func (o *Orchestrator) Handle(ctx context.Context, wh *Webhook) error {
 	}
 }
 
+func (o *Orchestrator) watchRepository(ctx context.Context, repository string, interval time.Duration) error {
+	w, err := newWatcher(repository)
+	if err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(interval)
+
+	for {
+		select {
+		case <-ticker.C:
+			w.fetch()
+		case <-ctx.Done():
+			return nil
+		case event := <-w.Events():
+			repo, err := o.clone(ctx, repository, event.Ref, event.Hash.String())
+			if err != nil {
+				return err
+			}
+
+			if err := hasDispatch(ctx, repo.AsModule().Initialize()); err != nil {
+				return err
+			}
+
+			return o.Dispatcher.Dispatch(ctx, &Spec{}, []Function{{Name: "dispatch"}}, &Event{
+				RepositoryName: repository,
+				Ref:            event.Ref,
+				SHA:            event.Hash.String(),
+				Repository:     repo,
+				Changes:        []string{},
+				EventType:      "push",
+			})
+		}
+	}
+}
+
+func (o *Orchestrator) clone(ctx context.Context, repoUrl, ref, sha string) (*dagger.Directory, error) {
+	slog.Info("cloning repository", slog.String("repository", repoUrl),
+		slog.String("ref", ref), slog.String("sha", sha))
+
+	return BaseContainer(o.dag).
+		WithEnvVariable("CACHE_BUST", time.Now().String()).
+		WithMountedSecret("/root/.netrc", o.GithubNetrc).
+		WithExec([]string{"git", "clone", "--single-branch", "--branch", ref, "--depth", "10", repoUrl, "/app"}).
+		WithWorkdir("/app").
+		WithExec([]string{"git", "checkout", sha}).
+		Directory("/app").
+		Sync(ctx)
+}
+
 func (o *Orchestrator) HandleGithub(ctx context.Context, wh *Webhook) error {
 	event, err := o.handleGithubEvent(ctx, wh.EventType, wh.Payload)
 	if err != nil {

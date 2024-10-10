@@ -51,7 +51,7 @@ func (ld *LocalDispatcher) Dispatch(ctx context.Context, spec *Spec, functions [
 					slog.String("repository", event.RepositoryName), slog.String("function", fn.Name),
 					slog.String("event_type", event.EventType))
 
-				call := fmt.Sprintf("dagger call -vvv -m %s --progress plain %s %s --event-trigger /payload.json", spec.ModulePath, fn.Name, fn.Args)
+				call := fmt.Sprintf("dagger call -vvv --progress plain %s %s --event-trigger /payload.json", fn.Name, fn.Args)
 				stdout, err := AgentContainer(ld.dag).
 					WithServiceBinding("pocketci", api).
 					WithEnvVariable("_POCKETCI_CP_URL", "http://pocketci:8080/pipelines").

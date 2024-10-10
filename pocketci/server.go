@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger"
 )
@@ -32,6 +33,8 @@ type ServerOptions struct {
 	GithubUsername  string
 	GithubPassword  string
 	GithubSignature string
+	WatchRepository string
+	WatchInterval   time.Duration
 }
 
 func NewServer(dag *dagger.Client, opts ServerOptions) (*Server, error) {
@@ -53,6 +56,10 @@ func NewServer(dag *dagger.Client, opts ServerOptions) (*Server, error) {
 		},
 		githubSignature: opts.GithubSignature,
 		pipelines:       []*CreatePipelineRequest{},
+	}
+
+	if opts.WatchRepository != "" {
+		go s.orchestrator.watchRepository(context.Background(), opts.WatchRepository, opts.WatchInterval)
 	}
 
 	return s, nil

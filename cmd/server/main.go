@@ -7,12 +7,17 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/franela/pocketci/pocketci"
 )
 
-var verbose = flag.Bool("verbose", false, "whether to enable verbose output")
+var (
+	verbose       = flag.Bool("verbose", false, "whether to enable verbose output")
+	watch         = flag.String("watch", "", "repository to watch for events")
+	watchInterval = flag.Duration("interval", 10*time.Second, "interval to check for updates on remote")
+)
 
 func main() {
 	flag.Parse()
@@ -32,6 +37,8 @@ func main() {
 		GithubUsername:  os.Getenv("GITHUB_USERNAME"),
 		GithubPassword:  os.Getenv("GITHUB_TOKEN"),
 		GithubSignature: os.Getenv("X_HUB_SIGNATURE"),
+		WatchRepository: *watch,
+		WatchInterval:   *watchInterval,
 	})
 	if err != nil {
 		slog.Error("failed to create pocketci server", slog.String("error", err.Error()))
