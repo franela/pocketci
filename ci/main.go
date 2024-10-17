@@ -20,14 +20,23 @@ func (m *Ci) Publish(ctx context.Context, src *dagger.Directory, tag, username s
 		Publish(ctx, "ghcr.io/franela/pocketci:"+tag)
 }
 
-func (m *Ci) Test(ctx context.Context, src *dagger.Directory, ghUsername, ghPassword *dagger.Secret) *dagger.Container {
+func (m *Ci) Test(ctx context.Context,
+	// +defaultPath="../"
+	src *dagger.Directory,
+	// +optional
+	ghUsername *dagger.Secret,
+	// +optional
+	ghPassword *dagger.Secret,
+) *dagger.Container {
 	return m.base(src).
 		WithSecretVariable("GH_USERNAME", ghUsername).
 		WithSecretVariable("GH_PASSWORD", ghPassword).
 		WithExec([]string{"sh", "-c", "go test -v ./pocketci/..."}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 }
 
-func (m *Ci) Lint(ctx context.Context, src *dagger.Directory) *dagger.Container {
+func (m *Ci) Lint(ctx context.Context,
+	// +defaultPath="../"
+	src *dagger.Directory) *dagger.Container {
 	return dag.Container().
 		From("golangci/golangci-lint:"+GolangLintVersion).
 		WithMountedDirectory("/app", src).
