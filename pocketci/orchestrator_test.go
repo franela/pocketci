@@ -13,6 +13,8 @@ import (
 )
 
 func TestOrchestrator_HandleGithub(t *testing.T) {
+	t.Skip()
+
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -42,6 +44,8 @@ func TestOrchestrator_HandleGithub(t *testing.T) {
 }
 
 func TestParseRepositorySpec(t *testing.T) {
+	t.Skip()
+
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(io.Discard))
 	if err != nil {

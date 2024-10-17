@@ -29,10 +29,19 @@ func (m *Ci) Test(ctx context.Context,
 	ghPassword *dagger.Secret,
 ) *dagger.Container {
 	return m.base(src).
-		WithSecretVariable("GH_USERNAME", ghUsername).
-		WithSecretVariable("GH_PASSWORD", ghPassword).
+		With(func(c *dagger.Container) *dagger.Container {
+			if ghUsername != nil {
+				c = c.WithSecretVariable("GH_USERNAME", ghUsername)
+			}
+			if ghPassword != nil {
+				c = c.WithSecretVariable("GH_PASSWORD", ghPassword)
+			}
+			return c
+		}).
 		WithExec([]string{"sh", "-c", "go test -v ./pocketci/..."}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 }
+
+// testing
 
 func (m *Ci) Lint(ctx context.Context,
 	// +defaultPath="../"
