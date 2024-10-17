@@ -22,6 +22,7 @@ var (
 	controlPlane = flag.String("control-plane", "", "url to control plane host")
 	interval     = flag.Duration("interval", 5*time.Second, "interval between pipeline polls")
 	runnerName   = flag.String("runner-name", "", "name of the runner that identifies it")
+	parallelism  = flag.Int("parallelism", 10, "max number of dagger calls to run in parallel")
 
 	ErrNoPipeline = errors.New("no pipeline to run")
 )
@@ -43,6 +44,11 @@ func main() {
 		log.Fatalf("failed to connect to dagger client: %s", err)
 	}
 
+	mu := make(chan bool, *parallelism)
+	for i := 0; i < *parallelism; i++ {
+		mu <- true
+	}
+
 	githubUser := os.Getenv("GITHUB_USERNAME")
 	githubPass := os.Getenv("GITHUB_TOKEN")
 	netrc := client.SetSecret("github_auth", fmt.Sprintf("machine github.com login %s password %s", githubUser, githubPass))
@@ -59,19 +65,42 @@ func main() {
 			continue
 		}
 
-		run(ctx, client, netrc, pipeline)
+		go func() {
+			// wait for parallelism
+			<-mu
+			defer func() {
+				mu <- true
+			}()
+
+			run(ctx, client, netrc, pipeline)
+			pipelineDone(pipeline)
+		}()
 
 		time.Sleep(*interval)
 	}
 }
 
-func getPipeline(ctx context.Context) (*pocketci.CreatePipelineRequest, error) {
+func pipelineDone(pipeline *pocketci.PocketciPipeline) {
+	res, err := http.Post(*controlPlane+"/pipelines/"+strconv.Itoa(pipeline.ID), "application/json", nil)
+	if err != nil {
+		slog.Error("could not mark pipeline as done", slog.String("error", err.Error()))
+		return
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusNoContent {
+		slog.Error("could not mark pipeline as done", slog.Int("status_code", res.StatusCode))
+	}
+	slog.Info("pipeline is done", slog.Int("pipeline", pipeline.ID))
+}
+
+func getPipeline(ctx context.Context) (*pocketci.PocketciPipeline, error) {
 	buf := bytes.NewBuffer([]byte{})
 	if err := json.NewEncoder(buf).Encode(pocketci.PipelineClaimRequest{RunnerName: *runnerName}); err != nil {
 		return nil, err
 	}
 
-	res, err := http.Post(*controlPlane, "application/json", buf)
+	res, err := http.Post(*controlPlane+"/pipelines/claim", "application/json", buf)
 	if err != nil {
 		return nil, err
 	}
@@ -79,54 +108,53 @@ func getPipeline(ctx context.Context) (*pocketci.CreatePipelineRequest, error) {
 		return nil, ErrNoPipeline
 	}
 
-	pipeline := &pocketci.CreatePipelineRequest{}
+	pipeline := &pocketci.PocketciPipeline{}
 	if err := json.NewDecoder(res.Body).Decode(pipeline); err != nil {
 		return nil, err
 	}
+
 	return pipeline, nil
 }
 
-func run(ctx context.Context, dag *dagger.Client, netrc *dagger.Secret, req *pocketci.CreatePipelineRequest) {
-	repoUrl := "https://github.com/" + req.RepositoryName
+func run(ctx context.Context, dag *dagger.Client, netrc *dagger.Secret, req *pocketci.PocketciPipeline) {
+	repoUrl := "https://github.com/" + req.Repository
 	slog.Info("cloning repository", slog.String("repository", repoUrl),
-		slog.String("ref", req.Ref), slog.String("sha", req.SHA))
+		slog.String("ref", req.GitInfo.Branch), slog.String("sha", req.GitInfo.SHA))
 
 	repo, err := pocketci.BaseContainer(dag).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithMountedSecret("/root/.netrc", netrc).
-		WithExec([]string{"git", "clone", "--single-branch", "--branch", req.Ref, "--depth", "1", repoUrl, "/app"}).
+		WithExec([]string{"git", "clone", "--single-branch", "--branch", req.GitInfo.Branch, "--depth", "1", repoUrl, "/app"}).
 		WithWorkdir("/app").
-		WithExec([]string{"git", "checkout", req.SHA}).
+		WithExec([]string{"git", "checkout", req.GitInfo.SHA}).
 		Directory("/app").
 		Sync(ctx)
 	if err != nil {
 		slog.Error("failed to clonse github repository", slog.String("error", err.Error()),
-			slog.String("repository", repoUrl), slog.String("ref", req.Ref), slog.String("sha", req.SHA))
+			slog.String("repository", repoUrl), slog.String("ref", req.GitInfo.Branch), slog.String("sha", req.GitInfo.SHA))
 		return
 	}
 
 	vars := map[string]string{
-		"GITHUB_SHA":        req.SHA,
-		"GITHUB_ACTIONS":    "true",
-		"GITHUB_EVENT_NAME": req.EventType,
-	}
-	if req.BaseRef != "" {
-		vars["GITHUB_REF"] = "refs/pull/" + strconv.Itoa(req.PrNumber) + "/merge"
+		"GITHUB_SHA":     req.GitInfo.SHA,
+		"GITHUB_ACTIONS": "true",
 	}
 
 	slog.Info("launching pocketci agent container",
-		slog.String("repository_name", req.RepositoryName), slog.String("pipeline", req.Name),
-		slog.String("ref", req.Ref), slog.String("base_ref", req.BaseRef),
-		slog.String("sha", req.SHA), slog.String("base_sha", req.BaseSHA),
-		slog.String("module", req.Module), slog.String("workdir", req.Workdir),
-		slog.String("exec", req.Exec), slog.String("runs_on", req.RunsOn))
+		slog.String("repository_name", req.Repository), slog.String("pipeline", req.Name),
+		slog.String("ref", req.GitInfo.Branch), slog.String("sha", req.GitInfo.SHA),
+		slog.String("module", req.Module), slog.String("exec", req.Call),
+		slog.String("runs_on", req.Runner))
 
-	call := fmt.Sprintf("dagger call -m %s --progress plain %s", req.Module, req.Exec)
+	call := fmt.Sprintf("dagger call -m ci --progress plain %s", req.Call)
+	if req.Module != "" {
+		call = fmt.Sprintf("dagger call -m %s --progress plain %s", req.Module, req.Call)
+	}
 	stdout, err := pocketci.AgentContainer(dag).
 		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
-		WithDirectory("/"+req.RepositoryName, repo).
-		WithWorkdir("/"+req.RepositoryName).
+		WithDirectory("/app", repo).
+		WithWorkdir("/app").
 		WithEnvVariable("CI", "pocketci").
 		With(func(c *dagger.Container) *dagger.Container {
 			for key, val := range vars {

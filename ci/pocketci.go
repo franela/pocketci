@@ -5,70 +5,23 @@ import (
 	"dagger/ci/internal/dagger"
 )
 
-func (m *Ci) TestOnGithubPullRequest(ctx context.Context,
-	// +optional
-	// +default="**/**.go,go.*"
-	onChanges string,
-	// +default="synchronize,opened,reopened"
-	filter string,
-	src *dagger.Directory,
-	eventTrigger *dagger.File,
-	ghUsername, ghPassword *dagger.Secret) error {
-	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
-	return err
-}
+func (m *Ci) Pipelines(ctx context.Context) *dagger.File {
+	changes := []string{"**/**.go", "go.*"}
+	branches := []string{"main"}
 
-func (m *Ci) LintOnGithubPullRequest(ctx context.Context,
-	// +optional
-	// +default="**/**.go,go.*"
-	onChanges string,
-	// +default="synchronize,opened,reopened"
-	filter string,
-	src *dagger.Directory,
-	eventTrigger *dagger.File,
-	ghUsername, ghPassword *dagger.Secret) error {
-	_, err := m.Lint(ctx, src).Stdout(ctx)
-	return err
-}
+	checks := dag.Gha().WithPipeline("checks").
+		WithOnChanges(changes).
+		WithOnPullRequest([]dagger.GhaAction{dagger.Opened, dagger.Synchronize, dagger.Reopened}).
+		WithOnPush(branches).
+		WithModule("ci").
+		Call("test & lint")
 
-func (m *Ci) PublishOnGithubPush(ctx context.Context,
-	// +optional
-	// +default="**/**.go,go.*"
-	onChanges string,
-	// +default="main"
-	filter string,
-	src *dagger.Directory,
-	eventTrigger *dagger.File,
-	ghUsername, ghPassword *dagger.Secret) error {
+	publish := dag.Gha().WithPipeline("publish").
+		WithOnChanges(changes).
+		WithOnPush([]string{"main"}).
+		WithModule("ci").
+		Call("publish --sha env:COMMIT_SHA --username env:GH_USERNAME --password env:GH_PASSWORD").
+		After([]*dagger.GhaPipeline{checks})
 
-	sha, err := dag.Pocketci(eventTrigger).CommitPush().Sha(ctx)
-	if err != nil {
-		return err
-	}
-
-	username, _ := ghUsername.Plaintext(ctx)
-	_, err = m.Publish(ctx, src, sha, username, ghPassword)
-	return err
-}
-
-func (m *Ci) TestOnGithubPushMain(ctx context.Context,
-	// +optional
-	// +default="**/**.go,go.*"
-	onChanges string,
-	src *dagger.Directory,
-	eventTrigger *dagger.File,
-	ghUsername, ghPassword *dagger.Secret) error {
-	_, err := m.Test(ctx, src, ghUsername, ghPassword).Stdout(ctx)
-	return err
-}
-
-func (m *Ci) LintOnGithubPushMain(ctx context.Context,
-	// +optional
-	// +default="**/**.go,go.*"
-	onChanges string,
-	src *dagger.Directory,
-	eventTrigger *dagger.File,
-	ghUsername, ghPassword *dagger.Secret) error {
-	_, err := m.Lint(ctx, src).Stdout(ctx)
-	return err
+	return dag.Gha().Pipelines([]*dagger.GhaPipeline{checks, publish})
 }

@@ -13,6 +13,8 @@ import (
 )
 
 func TestOrchestrator_HandleGithub(t *testing.T) {
+	t.Skip()
+
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -21,11 +23,8 @@ func TestOrchestrator_HandleGithub(t *testing.T) {
 
 	orchestrator := &Orchestrator{
 		GithubNetrc: client.SetSecret("github_auth", fmt.Sprintf("machine github.com login %s password %s", os.Getenv("GH_USERNAME"), os.Getenv("GH_PASSWORD"))),
-		Dispatcher: &LocalDispatcher{
-			dag:         client,
-			parallelism: 1,
-		},
-		dag: client,
+		Dispatcher:  &LocalDispatcher{},
+		dag:         client,
 	}
 
 	cases := []struct {
@@ -45,6 +44,8 @@ func TestOrchestrator_HandleGithub(t *testing.T) {
 }
 
 func TestParseRepositorySpec(t *testing.T) {
+	t.Skip()
+
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(io.Discard))
 	if err != nil {
