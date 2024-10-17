@@ -164,6 +164,7 @@ func (o *Orchestrator) handleGithubEvent(ctx context.Context, eventType string, 
 		gh.Branch = strings.TrimPrefix(*ghEvent.PullRequest.Head.Ref, "refs/heads/")
 		baseRef = strings.TrimPrefix(*ghEvent.PullRequest.Base.Ref, "refs/heads/")
 		baseSha = *ghEvent.PullRequest.Base.SHA
+		gh.PullRequestEvent = ghEvent
 	case *github.PushEvent:
 		return nil, fmt.Errorf("received event of type %T that is not yet supported", ghEvent)
 	default:
