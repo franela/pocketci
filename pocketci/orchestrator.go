@@ -55,7 +55,7 @@ func (o *Orchestrator) HandleGithub(ctx context.Context, wh *Webhook) error {
 		return err
 	}
 
-	fn, err := hasFunction(ctx, event.Repository.AsModule().Initialize(), "pocketciPipelines", "pipelines", "dispatch")
+	fn, err := hasFunction(ctx, event.Repository.Directory("ci").AsModule().Initialize(), "pocketciPipelines", "pipelines", "dispatch")
 	if err != nil {
 		return err
 	}
