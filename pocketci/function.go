@@ -19,16 +19,21 @@ type Function struct {
 	Args string
 }
 
-func hasDispatch(ctx context.Context, mod *dagger.Module) error {
+func hasFunction(ctx context.Context, mod *dagger.Module, functions ...string) (string, error) {
 	modName, err := mod.Name(ctx)
 	if err != nil {
-		return fmt.Errorf("could not get module name: %s", err)
+		return "", fmt.Errorf("could not get module name: %s", err)
 	}
 	modName = strcase.ToLowerCamel(modName)
 
+	funcs := map[string]bool{}
+	for _, fn := range functions {
+		funcs[fn] = true
+	}
+
 	objects, err := mod.Objects(ctx)
 	if err != nil {
-		return fmt.Errorf("could not list module objects: %s", err)
+		return "", fmt.Errorf("could not list module objects: %s", err)
 	}
 
 	for _, obj := range objects {
@@ -47,24 +52,24 @@ func hasDispatch(ctx context.Context, mod *dagger.Module) error {
 			continue
 		}
 
-		funcs, err := object.Functions(ctx)
+		functions, err := object.Functions(ctx)
 		if err != nil {
-			return fmt.Errorf("could not list functions from object %s: %s", objName, err)
+			return "", fmt.Errorf("could not list functions from object %s: %s", objName, err)
 		}
 
-		for _, fn := range funcs {
+		for _, fn := range functions {
 			fnName, err := fn.Name(ctx)
 			if err != nil {
-				return fmt.Errorf("could not get function name for object %s: %s", objName, err)
+				return "", fmt.Errorf("could not get function name for object %s: %s", objName, err)
 			}
 
-			if fnName == "dispatch" {
-				return nil
+			if funcs[fnName] {
+				return fnName, nil
 			}
 		}
 	}
 
-	return ErrNoFunctionsMatched
+	return "", ErrNoFunctionsMatched
 }
 
 func matchFunctions(ctx context.Context, vendor, eventType, filter string, changes []string, mod *dagger.Module) ([]Function, error) {

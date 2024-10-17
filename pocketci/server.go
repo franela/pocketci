@@ -23,8 +23,7 @@ type Server struct {
 	orchestrator    *Orchestrator
 	githubSignature string
 
-	mu        sync.Mutex
-	pipelines []*CreatePipelineRequest
+	mu sync.Mutex
 }
 
 // TODO: move away into a proper `Config` structure for the server
@@ -44,15 +43,11 @@ func NewServer(dag *dagger.Client, opts ServerOptions) (*Server, error) {
 
 	s := &Server{
 		orchestrator: &Orchestrator{
-			Dispatcher: &LocalDispatcher{
-				dag:         dag,
-				parallelism: 2,
-			},
+			Dispatcher:  NewLocalDispatcher(),
 			dag:         dag,
 			GithubNetrc: dag.SetSecret("github_auth", fmt.Sprintf("machine github.com login %s password %s", opts.GithubUsername, opts.GithubPassword)),
 		},
 		githubSignature: opts.GithubSignature,
-		pipelines:       []*CreatePipelineRequest{},
 	}
 
 	return s, nil

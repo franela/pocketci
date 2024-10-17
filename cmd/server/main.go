@@ -39,7 +39,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", server)
-	mux.HandleFunc("POST /pipelines", server.PipelineHandler)
+	mux.HandleFunc("POST /pipelines/{pipeline_id}", server.PipelineDoneHandler)
 	mux.HandleFunc("POST /pipelines/claim", server.PipelineClaimHandler)
 	srv := &http.Server{
 		Addr:    ":8080",
