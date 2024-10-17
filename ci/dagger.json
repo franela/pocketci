@@ -4,7 +4,7 @@
   "dependencies": [
     {
       "name": "gha",
-      "source": "../modules/gha"
+      "source": "github.com/franela/pocketci/modules/gha@1cae77909b2ad0ace74301545a39d50d8af431b7"
     },
     {
       "name": "pocketci",
@@ -12,5 +12,5 @@
     }
   ],
   "source": ".",
-  "engineVersion": "v0.13.3"
+  "engineVersion": "v0.13.5"
 }
