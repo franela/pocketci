@@ -155,6 +155,7 @@ func (ld *LocalDispatcher) Dispatch(ctx context.Context, gitInfo GitInfo, pipeli
 			}
 			cache[p.Name] = append(cache[p.Name], pci)
 
+			slog.Info("new pipeline", slog.String("name", pci.Name), slog.String("call", pci.Call))
 			newPipelines = append(newPipelines, pci)
 		}
 	}

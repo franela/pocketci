@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.23.0
 
 require (
-	dagger.io/dagger v0.13.3
+	dagger.io/dagger v0.13.5
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/google/go-github/v61 v61.0.0
 	github.com/iancoleman/strcase v0.3.0

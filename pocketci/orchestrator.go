@@ -19,7 +19,7 @@ import (
 const (
 	GithubVendor = "github"
 
-	DaggerVersion = "0.13.3"
+	DaggerVersion = "0.13.5"
 )
 
 type Orchestrator struct {
@@ -66,6 +66,8 @@ func (o *Orchestrator) HandleGithub(ctx context.Context, wh *Webhook) error {
 	if err != nil {
 		return err
 	}
+
+	slog.Info("dispatching pipelines", slog.Int("pipelines", len(pipelines)))
 
 	return o.Dispatcher.Dispatch(ctx, GitInfo{Branch: event.Branch, SHA: event.SHA}, pipelines)
 }
@@ -162,10 +164,7 @@ func (o *Orchestrator) handleGithubEvent(ctx context.Context, eventType string, 
 		baseRef = strings.TrimPrefix(*ghEvent.PullRequest.Base.Ref, "refs/heads/")
 		baseSha = *ghEvent.PullRequest.Base.SHA
 	case *github.PushEvent:
-		gh.Branch = strings.TrimPrefix(*ghEvent.Ref, "refs/heads/")
-		fmt.Printf("%+v\n", *ghEvent)
-		fmt.Printf("%+v\n", *ghEvent.HeadCommit.ID)
-		gh.SHA = *ghEvent.HeadCommit.ID
+		return nil, fmt.Errorf("received event of type %T that is not yet supported", ghEvent)
 	default:
 		return nil, fmt.Errorf("received event of type %T that is not yet supported", ghEvent)
 	}
