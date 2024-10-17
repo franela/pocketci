@@ -124,6 +124,7 @@ func (o *Orchestrator) getPipelines(ctx context.Context, event *GithubEvent, fn 
 
 		p.Repository = event.RepositoryName
 
+		fmt.Printf("%+v\n", p)
 		switch {
 		case event.PullRequestEvent != nil && p.OnPR && (len(p.Actions) == 0 || slices.Contains(p.Actions, *event.PullRequestEvent.Action)):
 			// received a pull request and the pipeline targets the PR
