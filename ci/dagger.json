@@ -3,10 +3,14 @@
   "sdk": "go",
   "dependencies": [
     {
+      "name": "gha",
+      "source": "github.com/franela/pocketci/modules/gha@1cae77909b2ad0ace74301545a39d50d8af431b7"
+    },
+    {
       "name": "pocketci",
       "source": "github.com/franela/pocketci/modules/pocketci@f184045d17421024adf4b47b3e90e51e3962332d"
     }
   ],
   "source": ".",
-  "engineVersion": "v0.13.3"
+  "engineVersion": "v0.13.5"
 }

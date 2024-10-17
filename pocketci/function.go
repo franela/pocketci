@@ -19,6 +19,59 @@ type Function struct {
 	Args string
 }
 
+func hasFunction(ctx context.Context, mod *dagger.Module, functions ...string) (string, error) {
+	modName, err := mod.Name(ctx)
+	if err != nil {
+		return "", fmt.Errorf("could not get module name: %s", err)
+	}
+	modName = strcase.ToLowerCamel(modName)
+
+	funcs := map[string]bool{}
+	for _, fn := range functions {
+		funcs[fn] = true
+	}
+
+	objects, err := mod.Objects(ctx)
+	if err != nil {
+		return "", fmt.Errorf("could not list module objects: %s", err)
+	}
+
+	for _, obj := range objects {
+		object := obj.AsObject()
+		if object == nil {
+			continue
+		}
+
+		objName, err := object.Name(ctx)
+		if err != nil {
+			continue
+		}
+
+		objName = strcase.ToLowerCamel(objName)
+		if objName != modName {
+			continue
+		}
+
+		functions, err := object.Functions(ctx)
+		if err != nil {
+			return "", fmt.Errorf("could not list functions from object %s: %s", objName, err)
+		}
+
+		for _, fn := range functions {
+			fnName, err := fn.Name(ctx)
+			if err != nil {
+				return "", fmt.Errorf("could not get function name for object %s: %s", objName, err)
+			}
+
+			if funcs[fnName] {
+				return fnName, nil
+			}
+		}
+	}
+
+	return "", ErrNoFunctionsMatched
+}
+
 func matchFunctions(ctx context.Context, vendor, eventType, filter string, changes []string, mod *dagger.Module) ([]Function, error) {
 	modName, err := mod.Name(ctx)
 	if err != nil {

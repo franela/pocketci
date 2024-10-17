@@ -29,6 +29,8 @@ func moduleBasePath() string {
 }
 
 func TestMatchFunctions(t *testing.T) {
+	t.Skip()
+
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {

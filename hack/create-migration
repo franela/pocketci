@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -e -u
+
+cd $(dirname $0)/..
+
+./hack/migrate create -ext sql -dir ./pkg/models/migrations/ "$@"
