@@ -140,7 +140,7 @@ func (o *Orchestrator) getPipelines(ctx context.Context, event *GithubEvent, fn 
 			run = append(run, p)
 		default:
 			// We should NEVER reach here
-			panic("neither PullRequestEvent nor PushEvent was matched on GitHub. This is incorrect behavior, the server should have caught this scenario sooner and returned")
+			fmt.Printf("neither PullRequestEvent nor PushEvent was matched on GitHub.")
 		}
 	}
 
