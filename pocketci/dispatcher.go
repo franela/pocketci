@@ -2,29 +2,13 @@ package pocketci
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"time"
-
-	"dagger.io/dagger"
-	"github.com/iancoleman/strcase"
-	"golang.org/x/sync/errgroup"
+	"strings"
+	"sync"
+	"sync/atomic"
 )
-
-type Event struct {
-	RepositoryName string            `json:"repository_name"`
-	Repository     *dagger.Directory `json:"-"`
-	Changes        []string          `json:"-"`
-	Payload        json.RawMessage   `json:"payload"`
-
-	Vendor    string `json:"vendor"`
-	EventType string `json:"event_type"`
-	Filter    string `json:"filter"`
-
-	EnvVariables map[string]string `json:"-"`
-}
 
 // Dispatcher receives a list of functions and is in charge of making sure
 // each function call happens at most once. Whether they happen sync or async
@@ -36,63 +20,159 @@ type Event struct {
 // Not a huge deal, but probably worth to spend some time and think how this could
 // be re-architected.
 type Dispatcher interface {
-	Dispatch(ctx context.Context, spec *Spec, functions []Function, event *Event) error
+	Dispatch(ctx context.Context, gitInfo GitInfo, pipelines []*Pipeline) error
+	GetPipeline(ctx context.Context, runner string) *PocketciPipeline
+	PipelineDone(ctx context.Context, id int) error
 }
 
 // LocalDispatcher makes each of the function calls directly on the host.
 type LocalDispatcher struct {
-	dag         *dagger.Client
-	parallelism int
+	queuedMu sync.RWMutex
+	queued   []*PocketciPipeline
+
+	runningMu sync.RWMutex
+	running   map[int]*PocketciPipeline
+
+	doneMu sync.RWMutex
+	done   map[int]*PocketciPipeline
+
+	lastID atomic.Int64
 }
 
-func (ld *LocalDispatcher) Dispatch(ctx context.Context, spec *Spec, functions []Function, event *Event) error {
-	payload, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("could not marshal raw event payload: %s", err)
+func NewLocalDispatcher() *LocalDispatcher {
+	return &LocalDispatcher{
+		queued:  []*PocketciPipeline{},
+		running: map[int]*PocketciPipeline{},
+		done:    map[int]*PocketciPipeline{},
+	}
+}
+
+type PocketciPipeline struct {
+	ID         int      `json:"id"`
+	Name       string   `json:"name"`
+	Call       string   `json:"call"`
+	Parents    []int    `json:"parents"`
+	Repository string   `json:"repository"`
+	Runner     string   `json:"runner"`
+	Changes    []string `json:"changes"`
+	Module     string   `json:"module"`
+
+	pipelineDeps []string
+
+	GitInfo GitInfo `json:"git_info"`
+}
+
+func (ld *LocalDispatcher) GetPipeline(ctx context.Context, runner string) *PocketciPipeline {
+	return ld.getPipeline(ctx, runner, 0)
+}
+
+func (ld *LocalDispatcher) getPipeline(ctx context.Context, runner string, id int) *PocketciPipeline {
+	ld.queuedMu.Lock()
+	if len(ld.queued) <= id {
+		ld.queuedMu.Unlock()
+		slog.Info("no pipeline found")
+		return nil
 	}
 
-	var g errgroup.Group
-	g.SetLimit(ld.parallelism)
-	for _, fn := range functions {
-		g.Go(func(fn Function) func() error {
-			return func() error {
-				slog.Info("launching pocketci agent container dispatch call",
-					slog.String("repository", event.RepositoryName), slog.String("function", fn.Name),
-					slog.String("event_type", event.EventType), slog.String("filter", event.Filter))
+	pipeline := ld.queued[id]
+	if pipeline.Runner != "" && pipeline.Runner != runner {
+		ld.queuedMu.Unlock()
+		slog.Info(fmt.Sprintf("skipping pipeline. Requested runner %s but had %s", runner, pipeline.Runner))
+		return ld.getPipeline(ctx, runner, id+1)
+	}
 
-				call := fmt.Sprintf("dagger call -m %s --progress plain %s %s --src . --event-trigger /payload.json", spec.ModulePath, fn.Name, fn.Args)
-				stdout, err := AgentContainer(ld.dag).
-					WithEnvVariable("CACHE_BUST", time.Now().String()).
-					WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
-					WithDirectory("/"+event.RepositoryName, event.Repository).
-					WithWorkdir("/"+event.RepositoryName).
-					WithNewFile("/raw-payload.json", string(event.Payload)).
-					WithNewFile("/payload.json", string(payload)).
-					WithEnvVariable("CI", "pocketci").
-					With(func(c *dagger.Container) *dagger.Container {
-						for key, val := range event.EnvVariables {
-							c = c.WithEnvVariable(key, val)
-						}
-						script := fmt.Sprintf("unset TRACEPARENT;unset OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:38015;unset OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:38015/v1/traces;unset OTEL_EXPORTER_OTLP_TRACES_LIVE=1;unset OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:38015/v1/logs;unset OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/protobuf;unset OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:38015/v1/metrics; %s", call)
-						for _, secret := range spec.Secrets {
-							c = c.WithSecretVariable(secret.FromEnv, ld.dag.SetSecret(secret.Name, os.Getenv(secret.FromEnv)))
-							script = fmt.Sprintf("%s --%s env:%s", script, strcase.ToKebab(secret.Name), secret.FromEnv)
-						}
-						return c.WithExec([]string{"sh", "-c", script}, dagger.ContainerWithExecOpts{
-							ExperimentalPrivilegedNesting: true,
-						})
-					}).
-					Stdout(ctx)
-				if err != nil {
-					return err
-				}
+	ld.doneMu.RLock()
+	allDone := true
+	for _, parent := range pipeline.Parents {
+		_, ok := ld.done[parent]
+		allDone = allDone && ok
+	}
+	ld.doneMu.RUnlock()
 
-				fmt.Printf("$ %s\n%s", call, stdout)
-				return nil
+	if !allDone {
+		ld.queuedMu.Unlock()
+		return ld.getPipeline(ctx, runner, id+1)
+	}
+
+	switch id {
+	case 0:
+		ld.queued = ld.queued[1:]
+	case len(ld.queued):
+		ld.queued = ld.queued[:id]
+	default:
+		ld.queued = ld.queued[0:id]
+		ld.queued = ld.queued[id:]
+	}
+	ld.queuedMu.Unlock()
+
+	ld.runningMu.Lock()
+	ld.running[pipeline.ID] = pipeline
+	ld.runningMu.Unlock()
+	return pipeline
+}
+
+func (ld *LocalDispatcher) PipelineDone(ctx context.Context, id int) error {
+	ld.runningMu.Lock()
+	pipeline, ok := ld.running[id]
+	if !ok {
+		ld.runningMu.Unlock()
+		return errors.New("pipeline not found")
+	}
+
+	delete(ld.running, id)
+	ld.runningMu.Unlock()
+
+	ld.doneMu.Lock()
+	ld.done[id] = pipeline
+	ld.doneMu.Unlock()
+
+	return nil
+}
+
+func (ld *LocalDispatcher) Dispatch(ctx context.Context, gitInfo GitInfo, pipelines []*Pipeline) error {
+	cache := map[string][]*PocketciPipeline{}
+	newPipelines := []*PocketciPipeline{}
+	for _, p := range pipelines {
+		for _, cmd := range p.Exec {
+			cmd = strings.TrimSpace(cmd)
+
+			pci := &PocketciPipeline{
+				ID:           int(ld.lastID.Add(1)),
+				Call:         cmd,
+				Name:         p.Name,
+				Repository:   p.Repository,
+				Runner:       p.Runner,
+				Changes:      p.Changes,
+				Module:       p.Module,
+				pipelineDeps: p.PipelineDeps,
+				GitInfo:      gitInfo,
 			}
 
-		}(fn))
+			if len(cache[p.Name]) == 0 {
+				cache[p.Name] = []*PocketciPipeline{}
+			}
+			cache[p.Name] = append(cache[p.Name], pci)
+
+			slog.Info("new pipeline", slog.String("name", pci.Name), slog.String("call", pci.Call))
+			newPipelines = append(newPipelines, pci)
+		}
 	}
 
-	return g.Wait()
+	for _, p := range newPipelines {
+		if len(p.pipelineDeps) == 0 {
+			continue
+		}
+
+		for _, parent := range p.pipelineDeps {
+			for _, parentPipeline := range cache[parent] {
+				p.Parents = append(p.Parents, parentPipeline.ID)
+			}
+		}
+	}
+
+	ld.queuedMu.Lock()
+	defer ld.queuedMu.Unlock()
+	ld.queued = append(ld.queued, newPipelines...)
+
+	return nil
 }

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+set -e -u
+
+go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1 \
+  -source file://./pkg/models/migrations \
+  -database "$DATABASE_URL" \
+  "$@"
