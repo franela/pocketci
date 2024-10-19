@@ -3,21 +3,35 @@ package main
 import (
 	"dagger/gha/internal/dagger"
 	"encoding/json"
+
+	"github.com/franela/pocketci/pocketci"
 )
 
 type Gha struct{}
 
 type Pipeline struct {
-	Runner       string   `json:"runner"`
-	Changes      []string `json:"changes"`
-	Module       string   `json:"module"`
-	Name         string   `json:"name"`
-	Actions      []Action `json:"pr_actions"`
-	OnPR         bool     `json:"on_pr"`
-	OnPush       bool     `json:"on_push"`
-	Branches     []string `json:"branches"`
-	Exec         string   `json:"exec"`
-	PipelineDeps []string `json:"after"`
+	// +private
+	Runner string
+	// +private
+	Changes []string
+	// +private
+	UseModule string
+	// +private
+	Name string
+	// +private
+	MatchActions []string
+	// +private
+	MatchOnPR bool
+	// +private
+	BaseBranches []string
+	// +private
+	MatchOnPush bool
+	// +private
+	MatchBranches []string
+	// +private
+	Exec string
+	// +private
+	PipelineDeps []string
 }
 
 type Action string
@@ -29,34 +43,48 @@ const (
 )
 
 // Returns a container that echoes whatever string argument is provided
-func (m *Gha) WithPipeline(name string) *Pipeline {
+func (m *Gha) Pipeline(name string) *Pipeline {
 	return &Pipeline{Name: name}
 }
 
-func (m *Pipeline) WithRunsOn(name string) *Pipeline {
+func (m *Pipeline) RunsOn(name string) *Pipeline {
 	m.Runner = name
 	return m
 }
 
-func (m *Pipeline) WithOnPullRequest(actions ...Action) *Pipeline {
-	m.Actions = actions
-	m.OnPR = true
+func (m *Pipeline) OnPullRequest(actions ...Action) *Pipeline {
+	a := []string{}
+	for _, action := range actions {
+		a = append(a, string(action))
+	}
+	m.MatchActions = a
+	m.MatchOnPR = true
 	return m
 }
 
-func (m *Pipeline) WithOnChanges(paths ...string) *Pipeline {
+func (m *Pipeline) OnPullRequestAgainst(actions []Action, branches []string) *Pipeline {
+	a := []string{}
+	for _, action := range actions {
+		a = append(a, string(action))
+	}
+	m.MatchActions = a
+	m.MatchOnPR = true
+	return m
+}
+
+func (m *Pipeline) OnChanges(paths ...string) *Pipeline {
 	m.Changes = paths
 	return m
 }
 
-func (m *Pipeline) WithOnPush(branches ...string) *Pipeline {
-	m.OnPush = true
-	m.Branches = branches
+func (m *Pipeline) OnPush(branches ...string) *Pipeline {
+	m.MatchOnPush = true
+	m.MatchBranches = branches
 	return m
 }
 
-func (m *Pipeline) WithModule(path string) *Pipeline {
-	m.Module = path
+func (m *Pipeline) Module(path string) *Pipeline {
+	m.UseModule = path
 	return m
 }
 
@@ -75,7 +103,24 @@ func (m *Pipeline) After(pipelines ...*Pipeline) *Pipeline {
 }
 
 func (m *Gha) Pipelines(pipelines []*Pipeline) (*dagger.File, error) {
-	b, err := json.Marshal(pipelines)
+	ps := []pocketci.Pipeline{}
+
+	for _, p := range pipelines {
+		ps = append(ps, pocketci.Pipeline{
+			Name:         p.Name,
+			Runner:       p.Runner,
+			Changes:      p.Changes,
+			Module:       p.UseModule,
+			Actions:      p.MatchActions,
+			OnPR:         p.MatchOnPR,
+			OnPush:       p.MatchOnPush,
+			Branches:     p.MatchBranches,
+			Exec:         p.Exec,
+			PipelineDeps: p.PipelineDeps,
+		})
+	}
+
+	b, err := json.Marshal(ps)
 	if err != nil {
 		return nil, err
 	}
