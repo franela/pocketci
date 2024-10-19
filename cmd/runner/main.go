@@ -54,13 +54,13 @@ func main() {
 	netrc := client.SetSecret("github_auth", fmt.Sprintf("machine github.com login %s password %s", githubUser, githubPass))
 
 	for {
-		pipeline, err := getPipeline(ctx)
+		pipeline, err := getPipeline()
 		if err != nil && !errors.Is(err, ErrNoPipeline) {
 			log.Fatalf("failed to fetch pipeline: %s", err)
 		}
 
 		if errors.Is(err, ErrNoPipeline) {
-			slog.Info("no pipeline to run")
+			slog.Debug("no pipeline to run")
 			time.Sleep(*interval)
 			continue
 		}
@@ -94,7 +94,7 @@ func pipelineDone(pipeline *pocketci.PocketciPipeline) {
 	slog.Info("pipeline is done", slog.Int("pipeline", pipeline.ID))
 }
 
-func getPipeline(ctx context.Context) (*pocketci.PocketciPipeline, error) {
+func getPipeline() (*pocketci.PocketciPipeline, error) {
 	buf := bytes.NewBuffer([]byte{})
 	if err := json.NewEncoder(buf).Encode(pocketci.PipelineClaimRequest{RunnerName: *runnerName}); err != nil {
 		return nil, err
@@ -122,8 +122,9 @@ func run(ctx context.Context, dag *dagger.Client, netrc *dagger.Secret, req *poc
 		slog.String("ref", req.GitInfo.Branch), slog.String("sha", req.GitInfo.SHA))
 
 	repo, err := pocketci.BaseContainer(dag).
-		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithMountedSecret("/root/.netrc", netrc).
+		// bust cache based on whether we have a new sha
+		WithEnvVariable("CACHE_BUST", req.GitInfo.SHA+req.GitInfo.BaseSHA).
 		WithExec([]string{"git", "clone", "--single-branch", "--branch", req.GitInfo.Branch, "--depth", "1", repoUrl, "/app"}).
 		WithWorkdir("/app").
 		WithExec([]string{"git", "checkout", req.GitInfo.SHA}).
@@ -151,11 +152,13 @@ func run(ctx context.Context, dag *dagger.Client, netrc *dagger.Secret, req *poc
 		call = fmt.Sprintf("dagger call -m %s --progress plain %s", req.Module, req.Call)
 	}
 	stdout, err := pocketci.AgentContainer(dag).
-		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
 		WithDirectory("/app", repo).
 		WithWorkdir("/app").
 		WithEnvVariable("CI", "pocketci").
+		WithNewFile("/raw_event.json", string(req.RawEvent)).
+		WithEnvVariable("GITHUB_EVENT_PATH", "/raw_event.json").
+		WithEnvVariable("GITHUB_ACTIONS", "true").
 		With(func(c *dagger.Container) *dagger.Container {
 			for key, val := range vars {
 				c = c.WithEnvVariable(key, val)

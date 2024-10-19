@@ -2,6 +2,7 @@ package pocketci
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,7 +21,7 @@ import (
 // Not a huge deal, but probably worth to spend some time and think how this could
 // be re-architected.
 type Dispatcher interface {
-	Dispatch(ctx context.Context, gitInfo GitInfo, pipelines []*Pipeline) error
+	Dispatch(ctx context.Context, rawEvent json.RawMessage, gitInfo GitInfo, pipelines []*Pipeline) error
 	GetPipeline(ctx context.Context, runner string) *PocketciPipeline
 	PipelineDone(ctx context.Context, id int) error
 }
@@ -48,14 +49,15 @@ func NewLocalDispatcher() *LocalDispatcher {
 }
 
 type PocketciPipeline struct {
-	ID         int      `json:"id"`
-	Name       string   `json:"name"`
-	Call       string   `json:"call"`
-	Parents    []int    `json:"parents"`
-	Repository string   `json:"repository"`
-	Runner     string   `json:"runner"`
-	Changes    []string `json:"changes"`
-	Module     string   `json:"module"`
+	ID         int             `json:"id"`
+	Name       string          `json:"name"`
+	Call       string          `json:"call"`
+	Parents    []int           `json:"parents"`
+	Repository string          `json:"repository"`
+	Runner     string          `json:"runner"`
+	Changes    []string        `json:"changes"`
+	Module     string          `json:"module"`
+	RawEvent   json.RawMessage `json:"raw_event"`
 
 	pipelineDeps []string
 
@@ -70,7 +72,7 @@ func (ld *LocalDispatcher) getPipeline(ctx context.Context, runner string, id in
 	ld.queuedMu.Lock()
 	if len(ld.queued) <= id {
 		ld.queuedMu.Unlock()
-		slog.Info("no pipeline found")
+		slog.Debug("no pipeline found", slog.String("runner", runner))
 		return nil
 	}
 
@@ -129,7 +131,7 @@ func (ld *LocalDispatcher) PipelineDone(ctx context.Context, id int) error {
 	return nil
 }
 
-func (ld *LocalDispatcher) Dispatch(ctx context.Context, gitInfo GitInfo, pipelines []*Pipeline) error {
+func (ld *LocalDispatcher) Dispatch(ctx context.Context, rawEvent json.RawMessage, gitInfo GitInfo, pipelines []*Pipeline) error {
 	cache := map[string][]*PocketciPipeline{}
 	newPipelines := []*PocketciPipeline{}
 	for _, p := range pipelines {
@@ -137,6 +139,7 @@ func (ld *LocalDispatcher) Dispatch(ctx context.Context, gitInfo GitInfo, pipeli
 			cmd = strings.TrimSpace(cmd)
 
 			pci := &PocketciPipeline{
+				RawEvent:     rawEvent,
 				ID:           int(ld.lastID.Add(1)),
 				Call:         cmd,
 				Name:         p.Name,

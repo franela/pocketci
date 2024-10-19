@@ -16,7 +16,6 @@ func (s *Server) PipelineClaimHandler(w http.ResponseWriter, r *http.Request) {
 
 	pipeline := s.orchestrator.Dispatcher.GetPipeline(r.Context(), req.RunnerName)
 	if pipeline == nil {
-		slog.Info("no pipelines for runner", slog.String("runner_name", req.RunnerName))
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

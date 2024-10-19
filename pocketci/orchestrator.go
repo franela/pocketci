@@ -9,7 +9,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"time"
 
 	"dagger.io/dagger"
 	"github.com/bmatcuk/doublestar"
@@ -68,12 +67,11 @@ func (o *Orchestrator) HandleGithub(ctx context.Context, wh *Webhook) error {
 	}
 
 	slog.Info("dispatching pipelines", slog.Int("pipelines", len(pipelines)))
-	return o.Dispatcher.Dispatch(ctx, GitInfo{Branch: event.Branch, SHA: event.SHA}, pipelines)
+	return o.Dispatcher.Dispatch(ctx, event.RawPayload, event.GitInfo, pipelines)
 }
 
 func (o *Orchestrator) getPipelines(ctx context.Context, event *GithubEvent, fn string) ([]*Pipeline, error) {
 	stdout, err := AgentContainer(o.dag).
-		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithEnvVariable("DAGGER_CLOUD_TOKEN", os.Getenv("DAGGER_CLOUD_TOKEN")).
 		WithDirectory("/"+event.RepositoryName, event.Repository).
 		WithWorkdir("/" + event.RepositoryName).
@@ -137,9 +135,9 @@ func (o *Orchestrator) handleGithubEvent(ctx context.Context, eventType string, 
 
 	var (
 		gh = &GithubEvent{
-			EventType: eventType,
+			RawPayload: payload,
+			EventType:  eventType,
 		}
-		baseRef, baseSha string
 	)
 	switch ghEvent := githubEvent.(type) {
 	case *github.PullRequestEvent:
@@ -148,31 +146,24 @@ func (o *Orchestrator) handleGithubEvent(ctx context.Context, eventType string, 
 		gh.SHA = *ghEvent.PullRequest.Head.SHA
 		gh.RepositoryName = *ghEvent.Repo.FullName
 		gh.Branch = branchName(*ghEvent.PullRequest.Head.Ref)
-		baseRef = branchName(*ghEvent.PullRequest.Base.Ref)
-		baseSha = *ghEvent.PullRequest.Base.SHA
+		gh.BaseBranch = branchName(*ghEvent.PullRequest.Base.Ref)
+		gh.BaseSHA = *ghEvent.PullRequest.Base.SHA
+		gh.PRNumber = *ghEvent.PullRequest.Number
 	case *github.PushEvent:
 		gh.PushEvent = ghEvent
 
+		gh.RepositoryName = *ghEvent.Repo.FullName
 		gh.SHA = *ghEvent.HeadCommit.ID
-		gh.Branch = branchName(*ghEvent.Head)
+		gh.Branch = branchName(*ghEvent.Ref)
 	default:
 		return nil, fmt.Errorf("received event of type %T that is not yet supported", ghEvent)
 	}
 
 	ct := BaseContainer(o.dag).
-		WithEnvVariable("CACHE_BUST", time.Now().String()).
 		WithMountedSecret("/root/.netrc", o.GithubNetrc)
-	gh.Repository, gh.Changes, err = cloneAndDiff(ctx, ct, "https://github.com/"+gh.RepositoryName, gh.Branch, gh.SHA, baseRef, baseSha)
+	gh.Repository, gh.Changes, err = cloneAndDiff(ctx, ct, "https://github.com/"+gh.RepositoryName, gh.Branch, gh.SHA, gh.BaseBranch, gh.BaseSHA)
 	if err != nil {
 		return nil, fmt.Errorf("could not clond and diff repository: %s", err)
-	}
-
-	gh.Variables = map[string]string{
-		"GITHUB_SHA":        gh.SHA,
-		"GITHUB_ACTIONS":    "true",
-		"GITHUB_EVENT_NAME": gh.EventType,
-		"GITHUB_EVENT_PATH": "/raw-payload.json",
-		"GITHUB_REF":        gh.Branch,
 	}
 
 	return gh, nil
@@ -197,6 +188,9 @@ func cloneAndDiff(ctx context.Context, ct *dagger.Container, url, ref, sha, base
 	// a manual git clone instead of dagger's builtin dag.Git function because
 	// of this requirement.
 	dir, err := ct.
+		// env variable is set to invalidate the cache in case there is a new sha
+		// we need to pull
+		WithEnvVariable("CACHE_BUST", sha+baseSha).
 		WithExec([]string{"git", "clone", "--single-branch", "--branch", ref, "--depth", "10", url, "/app"}).
 		WithWorkdir("/app").
 		WithExec([]string{"git", "checkout", sha}).
@@ -240,7 +234,7 @@ func getDispatchModule(ctx context.Context, config *dagger.File) (string, error)
 
 	contents, err := config.Contents(ctx)
 	if err != nil {
-		return "", err
+		return ".", nil
 	}
 
 	spec := map[string]string{}
