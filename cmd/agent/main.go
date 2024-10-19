@@ -146,8 +146,8 @@ func run(ctx context.Context, dag *dagger.Client, netrc *dagger.Secret, req *poc
 		slog.String("module", req.Module), slog.String("exec", req.Call),
 		slog.String("runs_on", req.Runner))
 
-	call := fmt.Sprintf("dagger call -m ci --progress plain %s", req.Call)
-	if req.Module != "" {
+	call := fmt.Sprintf("dagger call --progress plain %s", req.Call)
+	if req.Module != "" && req.Module != "." {
 		call = fmt.Sprintf("dagger call -m %s --progress plain %s", req.Module, req.Call)
 	}
 	stdout, err := pocketci.AgentContainer(dag).
