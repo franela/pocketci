@@ -133,9 +133,7 @@ func (ld *LocalDispatcher) Dispatch(ctx context.Context, gitInfo GitInfo, pipeli
 	cache := map[string][]*PocketciPipeline{}
 	newPipelines := []*PocketciPipeline{}
 	for _, p := range pipelines {
-		cmds := strings.Split(p.Exec, "&")
-
-		for _, cmd := range cmds {
+		for _, cmd := range p.Exec {
 			cmd = strings.TrimSpace(cmd)
 
 			pci := &PocketciPipeline{

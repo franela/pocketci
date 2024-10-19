@@ -62,7 +62,7 @@ type Pipeline struct {
 	BaseBranches []string `json:"on_pr_against"`
 	OnPush       bool     `json:"on_push"`
 	Branches     []string `json:"branches"`
-	Exec         string   `json:"exec"`
+	Exec         []string `json:"exec"`
 	PipelineDeps []string `json:"after"`
 }
 

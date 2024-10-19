@@ -1,6 +1,0 @@
-module-path: ./ci
-secrets:
-  - name: ghUsername
-    from-env: GITHUB_USERNAME
-  - name: ghPassword
-    from-env: GITHUB_TOKEN
