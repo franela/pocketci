@@ -29,7 +29,7 @@ type Pipeline struct {
 	// +private
 	MatchBranches []string
 	// +private
-	Exec string
+	Exec []string
 	// +private
 	PipelineDeps []string
 }
@@ -89,7 +89,10 @@ func (m *Pipeline) Module(path string) *Pipeline {
 }
 
 func (m *Pipeline) Call(exec string) *Pipeline {
-	m.Exec = exec
+	if len(m.Exec) == 0 {
+		m.Exec = []string{}
+	}
+	m.Exec = append(m.Exec, exec)
 	return m
 }
 
