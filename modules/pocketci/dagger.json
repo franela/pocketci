@@ -1,6 +1,7 @@
 {
   "name": "pocketci",
-  "sdk": "go",
-  "source": ".",
-  "engineVersion": "v0.13.5"
+  "engineVersion": "v0.18.10",
+  "sdk": {
+    "source": "go"
+  }
 }

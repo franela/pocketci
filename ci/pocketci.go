@@ -9,17 +9,17 @@ func (m *Ci) Pipelines(ctx context.Context) *dagger.File {
 	changes := []string{"**/**.go", "go.*"}
 	branches := []string{"main"}
 
-	checks := dag.Gha().WithPipeline("checks").
-		WithOnChanges(changes).
-		WithOnPullRequest([]dagger.GhaAction{dagger.Opened, dagger.Synchronize, dagger.Reopened}).
-		WithOnPush(branches).
-		WithModule("ci").
+	checks := dag.Gha().Pipeline("checks").
+		OnChanges(changes).
+		OnPullRequest([]dagger.GhaAction{dagger.GhaActionOpened, dagger.GhaActionSynchronize, dagger.GhaActionReopened}).
+		OnPush(branches).
+		Module("ci").
 		Call("test & lint")
 
-	publish := dag.Gha().WithPipeline("publish").
-		WithOnChanges(changes).
-		WithOnPush([]string{"main"}).
-		WithModule("ci").
+	publish := dag.Gha().Pipeline("publish").
+		OnChanges(changes).
+		OnPush([]string{"main"}).
+		Module("ci").
 		Call("publish --sha env:COMMIT_SHA --username env:GH_USERNAME --password env:GH_PASSWORD").
 		After([]*dagger.GhaPipeline{checks})
 

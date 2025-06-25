@@ -115,7 +115,7 @@ func (m *Gha) Pipelines(pipelines []*Pipeline) (*dagger.File, error) {
 			OnPR:         p.MatchOnPR,
 			OnPush:       p.MatchOnPush,
 			Branches:     p.MatchBranches,
-			Exec:         p.Exec,
+			Exec:         []string{p.Exec},
 			PipelineDeps: p.PipelineDeps,
 		})
 	}
