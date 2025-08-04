@@ -1,6 +1,6 @@
 {
   "name": "ci",
-  "engineVersion": "v0.18.12",
+  "engineVersion": "v0.18.14",
   "sdk": {
     "source": "go"
   },
@@ -11,7 +11,7 @@
     },
     {
       "name": "hello",
-      "source": "github.com/franela/hello",
+      "source": "github.com/franela/hello@main",
       "pin": "0f45c37c7658edbdb4c404aa33fbcd44f2fb96a5"
     },
     {
