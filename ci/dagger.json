@@ -12,7 +12,7 @@
     {
       "name": "hello",
       "source": "github.com/franela/hello@main",
-      "pin": "fe13cb70d6145f6c3cc0202c2ff908d843864ff5"
+      "pin": "d3825ec7302a75a7d96c53266d4c92732f312b1f"
     },
     {
       "name": "pocketci",
