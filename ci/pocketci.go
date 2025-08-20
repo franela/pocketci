@@ -7,7 +7,7 @@ import (
 
 func (m *Ci) Pipelines(ctx context.Context) *dagger.File {
 	// call hello for testing purposes
-	dag.Hello().Hello(ctx, "foo")
+	dag.Hello().Hello(ctx, "foo", "bar")
 	changes := []string{"**/**.go", "go.*"}
 	branches := []string{"main"}
 
