@@ -1,6 +1,6 @@
 {
   "name": "ci",
-  "engineVersion": "v0.18.14",
+  "engineVersion": "v0.18.16",
   "sdk": {
     "source": "go"
   },
@@ -12,7 +12,7 @@
     {
       "name": "hello",
       "source": "github.com/franela/hello@main",
-      "pin": "5f77e386d5b6b205b18b9f2d25d53d4890f87b22"
+      "pin": "504732d7e264d7cae276feba6bb29a26bb125e8d"
     },
     {
       "name": "pocketci",
